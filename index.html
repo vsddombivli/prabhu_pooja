@@ -2287,12 +2287,7 @@ function renderGallerySessionPicker() {
 
 async function openPhotoUpload() {
   const dates = renderGallerySessionPicker();
-  const sessionDate = prompt(
-    'Enter the Sunday date for photos (YYYY-MM-DD): '
-Recent dates:
-' + dates.slice(0,6).join('
-')
-  );
+  const sessionDate = prompt('Enter the Sunday date for photos (YYYY-MM-DD):Recent dates:' + dates.slice(0,6).join(''));
   if (!sessionDate || !/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) {
     showToast('Invalid date format. Use YYYY-MM-DD'); return;
   }
