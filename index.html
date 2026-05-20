@@ -2288,7 +2288,7 @@ function renderGallerySessionPicker() {
 async function openPhotoUpload() {
   const dates = renderGallerySessionPicker();
   const sessionDate = prompt(
-    'Enter the Sunday date for photos (YYYY-MM-DD):
+    'Enter the Sunday date for photos (YYYY-MM-DD): '
 Recent dates:
 ' + dates.slice(0,6).join('
 ')
