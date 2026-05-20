@@ -275,6 +275,12 @@ select.fi{cursor:pointer;}
       <p class="tsm tm" style="text-align:center;margin-top:14px;">
         Parents: enter mobile number as email<br>e.g. <em>9876543210@parent.pooja</em>
       </p>
+      <div id="loginHint" style="display:none;background:var(--al);border:1px solid rgba(184,114,15,.3);border-radius:var(--r);padding:10px 12px;font-size:11.5px;color:#7A4A0A;margin-top:10px;line-height:1.7;">
+        <strong>Email not confirmed error?</strong><br>
+        Go to Supabase → Authentication → Settings →<br>
+        Uncheck <strong>"Enable email confirmations"</strong> → Save.<br>
+        Then try signing in again.
+      </div>
 
       <!-- Supabase config — visible only when not connected -->
       <div id="sbSetupPanel" style="display:none;margin-top:20px;border-top:1px solid var(--bdr);padding-top:18px;">
@@ -447,6 +453,7 @@ select.fi{cursor:pointer;}
       <div class="tb2">
         <button class="btn bg" onclick="openPhotoUpload()">+ Upload photos</button>
       </div>
+      <div class="inf" style="display:block;margin-bottom:10px;">Photos are grouped by Sunday date. Click upload, enter the date, then select photos or videos.</div>
       <div id="galleryContent"><div class="empty">No photos yet</div></div>
     </div>
 
@@ -475,8 +482,8 @@ select.fi{cursor:pointer;}
         <div id="locMgrList"><div class="empty">Loading…</div></div>
       </div>
       <div class="card">
-        <div class="ct">Edit selected location — <span id="editingLocName" style="color:var(--green);font-weight:600;"></span></div>
-        <div class="fg"><label class="fl">Location name</label><input class="fi" id="cfgName" /></div>
+        <div class="ct">Edit location — <span id="editingLocName" style="color:var(--green);font-weight:600;"></span></div>
+        <div class="fg"><label class="fl">Location name *</label><input class="fi" id="cfgName" /></div>
         <div class="fi-row">
           <div class="fg"><label class="fl">Event day</label>
             <select class="fi" id="cfgDay">
@@ -729,6 +736,8 @@ select.fi{cursor:pointer;}
       <div class="wa-preview" id="uWaMsg">Fill in details above…</div>
       <button class="btn bo" style="margin-top:8px;font-size:12px;" onclick="copyUserWA()">📋 Copy message</button>
     </div>
+      <div id="uInstructions" style="display:none;margin-top:10px;"></div>
+    </div>
     <div class="mf"><button class="btn bo" onclick="closeMo('mUser')">Cancel</button><button class="btn bg" id="saveUserBtn" onclick="saveUser()">Create</button></div>
   </div>
 </div>
@@ -950,7 +959,14 @@ async function doLogin() {
   }
 
   if (authError) {
-    err.textContent = authError.message; err.style.display = 'block'; reset(); return;
+    err.textContent = authError.message;
+    err.style.display = 'block';
+    const hint = document.getElementById('loginHint');
+    if (hint) {
+      const msg = authError.message.toLowerCase();
+      hint.style.display = (msg.includes('confirm') || msg.includes('not confirmed') || msg.includes('email')) ? 'block' : 'none';
+    }
+    reset(); return;
   }
 
   // Fetch profile
@@ -1141,7 +1157,10 @@ function goTo(s, el) {
   if (s === 'financials') renderFinancials();
   if (s === 'users') renderUserList();
   if (s === 'gallery') renderGallery();
-  if (s === 'settings') { renderLocMgrList(); document.getElementById('editingLocName').textContent = activeLoc?.name || ''; }
+  if (s === 'settings') {
+    renderLocMgrList();
+    document.getElementById('editingLocName').textContent = activeLoc?.name || '';
+  }
   if (s === 'pgallery') renderParentGallery();
   if (s === 'pdonation') renderParentDonateInfo();
 }
@@ -1561,14 +1580,30 @@ async function saveKid() {
       if (up) { const { data: ul } = sb.storage.from('kid-photos').getPublicUrl(path); photo_url = ul.publicUrl; }
     }
     if (id) {
-      const { error: updErr } = await sb.from('kids').update({ first_name:first, middle_name:middle, surname, dob, mobile:mobile||'', email:email||'', notes:notes||'', ...(photo_url&&{photo_url}) }).eq('id',id);
-      if (updErr) { showToast('Failed to update kid: ' + updErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
+      const primaryLocId2 = locIds[0] || activeLoc?.id;
+      const { error: updErr } = await sb.from('kids').update({
+        home_location_id: primaryLocId2,
+        first_name:first, middle_name:middle||'', surname, dob,
+        mobile:mobile||'', email:email||'', notes:notes||'',
+        ...(photo_url && {photo_url})
+      }).eq('id',id);
+      if (updErr) { showToast('RLS/DB error: ' + updErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
       await sb.from('kid_locations').delete().eq('kid_id',id);
       if (locIds.length) await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:id,location_id:l})));
     } else {
-      const { data: nd, error: kidErr } = await sb.from('kids').insert({ first_name:first, middle_name:middle, surname, dob, mobile:mobile||'', email:email||'', notes:notes||'', photo_url:photo_url||null, is_active:true, quarterly_attendance:0, yearly_attendance:0, created_by:me?.id||null }).select().single();
-      if (kidErr) { showToast('Failed to save kid: ' + kidErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
-      if (nd) await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:nd.id,location_id:l})));
+      const primaryLocId = locIds[0] || activeLoc?.id;
+      const { data: nd, error: kidErr } = await sb.from('kids').insert({
+        home_location_id: primaryLocId,
+        first_name:first, middle_name:middle||'', surname, dob,
+        mobile:mobile||'', email:email||'', notes:notes||'',
+        photo_url:photo_url||null, is_active:true,
+        quarterly_attendance:0, yearly_attendance:0,
+        created_by:me?.id||null
+      }).select().single();
+      if (kidErr) { showToast('RLS/DB error: ' + kidErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
+      if (nd && locIds.length) {
+        await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:nd.id,location_id:l})));
+      }
     }
     await loadAll();
   } else {
@@ -1915,25 +1950,25 @@ async function savePlan() {
   const prefDates = [...document.querySelectorAll('#planDateFields input[type=date]')].map(x=>x.value).filter(Boolean);
   const sshot   = document.getElementById('planScreenshot').files[0];
 
-  // Validation
   if (!did)   { showToast('Select a donor'); return; }
   if (!locId) { showToast('Select a location'); return; }
 
-  const paidStatus = document.getElementById('planPaidStatus').value;
-  const paidAmt    = parseInt(document.getElementById('planPaidAmt').value || 0);
+  // Validate payment fields
+  const _pstatus = document.getElementById('planPaidStatus').value;
+  const _pamt    = parseInt(document.getElementById('planPaidAmt').value || 0);
+  const _pmode   = document.getElementById('planMode').value;
+  const _recvBy  = document.getElementById('planReceivedBy').value;
+  const _pdate   = document.getElementById('planPaidDate').value;
 
-  // If paid in full: paid amount must equal total amount
-  if (paidStatus === 'paid' && paidAmt !== amt) {
-    showToast(`Paid amount must equal total (${fmtAmt(amt)}) when status is "Paid in full"`); return;
+  if (_pstatus === 'paid' && _pamt !== amt) {
+    showToast('Paid amount must equal total ' + fmtAmt(amt) + ' when status is "Paid in full"'); return;
   }
-  // If partial or paid: require payment mode, received by, and date
-  if (paidStatus !== 'unpaid') {
-    if (!pmode)   { showToast('Select payment mode (cash or online)'); return; }
-    if (!recvBy)  { showToast('Select who received the payment'); return; }
-    if (!pdate)   { showToast('Enter payment date'); return; }
+  if (_pstatus !== 'unpaid') {
+    if (!_pmode)  { showToast('Select payment mode (cash or online)'); return; }
+    if (!_recvBy) { showToast('Select who received the payment'); return; }
+    if (!_pdate)  { showToast('Enter payment date'); return; }
   }
-  // Online payment: require UTR
-  if (pmode === 'online' && !document.getElementById('planUtr').value.trim()) {
+  if (_pmode === 'online' && !document.getElementById('planUtr').value.trim()) {
     showToast('Enter UTR / transaction number for online payment'); return;
   }
   const btn = document.getElementById('savePlanBtn');
@@ -2107,8 +2142,8 @@ function updateUserWA() {
   const email = r==='parent'?(mob+'@parent.pooja'):document.getElementById('uEmail').value.trim()||(mob+'@temple.org');
   const link  = SB_URL ? '[App URL]' : 'https://your-app.com';
   const msg = r==='parent'
-    ? `🙏 Prabhu Pooja — Parent Portal\n\nNamaste ${nm},\nYour child's attendance portal is ready.\n\n🔗 ${link}\n📱 Select "Parent" tab\n👤 Email: ${mob}@parent.pooja\n🔑 Password: ${pass}\n\nJai Swaminarayan 🙏`
-    : `🙏 Prabhu Pooja — ${r==='admin'?'Admin':'Volunteer'} Access\n\nNamaste ${nm},\n\n🔗 ${link}\n👤 Email: ${email}\n🔑 Password: ${pass}\n📍 Location: ${locNm}\n🎭 Role: ${r}\n\nJai Swaminarayan 🙏`;
+    ? `🙏 Prabhu Pooja — Parent Portal\n\nNamaste ${nm},\nYour child's attendance portal is ready.\n\n🔗 ${link}\n📱 Select "Parent" tab\n👤 Email: ${mob}@parent.pooja\n🔑 Password: ${pass}\n\nJai Jinendra 🙏`
+    : `🙏 Prabhu Pooja — ${r==='admin'?'Admin':'Volunteer'} Access\n\nNamaste ${nm},\n\n🔗 ${link}\n👤 Email: ${email}\n🔑 Password: ${pass}\n📍 Location: ${locNm}\n🎭 Role: ${r}\n\nJai Jinendra 🙏`;
   document.getElementById('uWaMsg').textContent = msg;
 }
 
@@ -2120,45 +2155,68 @@ async function saveUser() {
   const r     = document.getElementById('uRole').value;
   const pass  = document.getElementById('uPass').value;
   const locId = document.getElementById('uLoc').value;
-  const email = r==='parent' ? (mob+'@parent.pooja') : document.getElementById('uEmail').value.trim();
-
-  if (!nm)              { showToast('Enter full name'); return; }
-  if (!mob)             { showToast('Enter mobile'); return; }
-  if (!email)           { showToast('Enter email'); return; }
+  const email = r==='parent'?(mob+'@parent.pooja'):document.getElementById('uEmail').value.trim();
+  if (!nm)   { showToast('Enter full name'); return; }
+  if (!mob)  { showToast('Enter mobile number'); return; }
+  if (!email){ showToast('Enter email'); return; }
   if (!pass || pass.length < 8) { showToast('Password must be at least 8 characters'); return; }
   if (r !== 'parent' && !locId) { showToast('Select a location'); return; }
-
   const btn = document.getElementById('saveUserBtn');
-  btn.innerHTML = '<span class="spinner" style="border-top-color:white;border-color:rgba(255,255,255,.3)"></span>'; btn.disabled = true;
-
+  btn.innerHTML='<span class="spinner" style="border-top-color:white;border-color:rgba(255,255,255,.3)"></span>'; btn.disabled=true;
   if (sb) {
-    // Step 1: Create auth user via Supabase Admin API (requires service_role key)
-    // Since we only have anon key in browser, we use signUp instead.
-    // The handle_new_user trigger auto-creates the profile row.
-    const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
-      email,
-      password: pass,
-      options: { data: { full_name: nm, mobile: mob, role: r } }
-    });
-    if (signUpErr) { showToast('Error: ' + signUpErr.message); btn.innerHTML='Create'; btn.disabled=false; return; }
+    // Call the Edge Function which uses service_role key server-side
+    // This creates auth user + profile + location in one step
+    let edgeFnUrl = SB_URL.replace('supabase.co', 'supabase.co/functions/v1') + '/create-user';
+    // For custom domains: edgeFnUrl = SB_URL + '/functions/v1/create-user'
 
-    const userId = signUpData?.user?.id;
-    if (!userId) { showToast('User created but ID not returned. Check Supabase Auth.'); btn.innerHTML='Create'; btn.disabled=false; return; }
+    const { data: { session } } = await sb.auth.getSession();
+    const jwt = session?.access_token;
+    if (!jwt) { showToast('Session expired. Please log in again.'); btn.innerHTML='Create'; btn.disabled=false; return; }
 
-    // Step 2: Update profile with role and mobile (trigger may not set role correctly)
-    await sb.from('profiles').upsert({
-      id: userId, email, full_name: nm, mobile: mob, role: r
-    }, { onConflict: 'id' });
-
-    // Step 3: Assign to location
-    if (locId) {
-      await sb.from('profile_locations').upsert(
-        { profile_id: userId, location_id: locId },
-        { onConflict: 'profile_id,location_id' }
-      );
+    let result;
+    try {
+      const res = await fetch(edgeFnUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + jwt,
+          'apikey': SB_KEY
+        },
+        body: JSON.stringify({
+          full_name: nm,
+          mobile: mob,
+          email,
+          password: pass,
+          role: r,
+          location_id: locId || null
+        })
+      });
+      result = await res.json();
+    } catch (ex) {
+      showToast('Network error calling edge function: ' + ex.message);
+      btn.innerHTML='Create'; btn.disabled=false; return;
     }
 
-    // Refresh user list
+    if (result.error) {
+      showToast('Error: ' + result.error);
+      // Show deployment instructions if edge function not deployed yet
+      const instrDiv = document.getElementById('uInstructions');
+      if (instrDiv && result.error.includes('fetch')) {
+        instrDiv.style.display = 'block';
+        instrDiv.innerHTML =
+          '<div style="background:var(--al);border:1px solid rgba(184,114,15,.3);border-radius:var(--r);padding:12px;font-size:12px;color:#7A4A0A;line-height:1.9;">' +
+          '<strong>Edge function not deployed yet.</strong><br>' +
+          'Run these commands in terminal from the project folder:<br>' +
+          '<code style="background:rgba(0,0,0,.08);padding:2px 6px;border-radius:3px;display:block;margin:4px 0;">npm install -g supabase</code>' +
+          '<code style="background:rgba(0,0,0,.08);padding:2px 6px;border-radius:3px;display:block;margin:4px 0;">supabase login</code>' +
+          '<code style="background:rgba(0,0,0,.08);padding:2px 6px;border-radius:3px;display:block;margin:4px 0;">supabase functions deploy create-user --project-ref YOUR_PROJECT_REF</code>' +
+          'Your project ref is the part after https:// in your Supabase URL.' +
+          '</div>';
+      }
+      btn.innerHTML='Create'; btn.disabled=false; return;
+    }
+
+    // Success — refresh user list
     const { data: ud } = await sb.from('profiles').select('*').order('role');
     users = ud || [];
     renderUserList();
@@ -2166,18 +2224,30 @@ async function saveUser() {
     users.push({ id:'u'+Date.now(), full_name:nm, mobile:mob, email, role:r, location_ids:[locId] });
     renderUserList();
   }
-
   btn.innerHTML = 'Create'; btn.disabled = false;
-  showToast(`${nm} created · Copy WhatsApp message and send credentials`);
+  showToast(nm + ' created successfully. Send WhatsApp credentials.');
+  // Hide instructions if shown
+  const instrDiv = document.getElementById('uInstructions');
+  if (instrDiv) instrDiv.style.display = 'none';
   updateUserWA();
 }
 
 async function deleteUser(id) {
-  const u=users.find(x=>x.id===id);
-  confirm2(`Delete user ${u?.full_name}?`,async()=>{
-    if(sb){showToast('Production: use Supabase Admin API');}
-    else{users=users.filter(x=>x.id!==id);renderUserList();}
-    showToast('Deleted');
+  const u = users.find(x=>x.id===id);
+  confirm2('Delete user ' + (u?.full_name||id) + '? This removes their profile and location access.', async () => {
+    if (sb) {
+      await sb.from('profile_locations').delete().eq('profile_id', id);
+      const { error } = await sb.from('profiles').delete().eq('id', id);
+      if (error) { showToast('Delete failed: ' + error.message); return; }
+      const { data: ud } = await sb.from('profiles').select('*').order('role');
+      users = ud || [];
+      renderUserList();
+      showToast('Profile deleted. Remove from Supabase Auth → Users manually if needed.');
+    } else {
+      users = users.filter(x=>x.id!==id);
+      renderUserList();
+      showToast('Deleted');
+    }
   });
 }
 
@@ -2195,7 +2265,83 @@ function renderGallery() {
     </div>`).join('')}</div>`;
 }
 
-function openPhotoUpload() { showToast('Select a Sunday session first, then upload photos. (Full flow on Supabase connection)'); }
+function renderGallerySessionPicker() {
+  const today = tod();
+  // Build list of recent + upcoming sessions for this location
+  const recentDates = [];
+  // Generate last 8 + next 4 event days
+  const d = new Date();
+  const ev = activeLoc?.event_day ?? 0;
+  // Go back to find last event day
+  const dayOfWeek = d.getDay();
+  const daysBack = (dayOfWeek - ev + 7) % 7 || 7;
+  const lastEvent = new Date(d);
+  lastEvent.setDate(d.getDate() - daysBack);
+  for (let i = -3; i <= 8; i++) {
+    const nd = new Date(lastEvent);
+    nd.setDate(lastEvent.getDate() + i * 7);
+    recentDates.push(nd.toISOString().split('T')[0]);
+  }
+  return recentDates.sort().reverse();
+}
+
+async function openPhotoUpload() {
+  const dates = renderGallerySessionPicker();
+  const sessionDate = prompt(
+    'Enter the Sunday date for photos (YYYY-MM-DD):
+Recent dates:
+' + dates.slice(0,6).join('
+')
+  );
+  if (!sessionDate || !/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) {
+    showToast('Invalid date format. Use YYYY-MM-DD'); return;
+  }
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/*,video/*';
+  fileInput.multiple = true;
+  fileInput.onchange = async () => {
+    const files = [...fileInput.files];
+    if (!files.length) return;
+    if (!sb) { showToast('Connect Supabase to upload photos'); return; }
+
+    // Ensure Sunday session exists
+    let sessionId;
+    const { data: existing } = await sb.from('sunday_sessions')
+      .select('id').eq('location_id', activeLoc.id).eq('event_date', sessionDate).maybeSingle();
+    if (existing) {
+      sessionId = existing.id;
+    } else {
+      const { data: ns, error: nsErr } = await sb.from('sunday_sessions').insert({
+        location_id: activeLoc.id, event_date: sessionDate, cost_borne_by: 'donor', created_by: me?.id
+      }).select().single();
+      if (nsErr) { showToast('Could not create session: ' + nsErr.message); return; }
+      sessionId = ns.id;
+    }
+
+    let uploaded = 0;
+    for (const file of files) {
+      const ext = file.name.split('.').pop();
+      const isVideo = file.type.startsWith('video');
+      const path = `${activeLoc.id}/${sessionDate}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { data: up, error: upErr } = await sb.storage.from('sunday-gallery').upload(path, file);
+      if (upErr) { showToast('Upload failed: ' + upErr.message); continue; }
+      const { data: ul } = sb.storage.from('sunday-gallery').getPublicUrl(path);
+      await sb.from('sunday_photos').insert({
+        session_id: sessionId, location_id: activeLoc.id,
+        url: ul.publicUrl, file_type: isVideo ? 'video' : 'image',
+        uploaded_by: me?.id
+      });
+      uploaded++;
+    }
+    showToast(uploaded + ' file(s) uploaded for ' + sessionDate);
+    // Reload photos
+    const { data: ph } = await sb.from('sunday_photos').select('*').eq('location_id', activeLoc.id).order('uploaded_at',{ascending:false});
+    photos = ph || [];
+    renderGallery();
+  };
+  fileInput.click();
+}
 
 // ══════════════════════════════════════════════════
 // REPORTS
@@ -2223,27 +2369,21 @@ function confirmQReset() {
 // ══════════════════════════════════════════════════
 async function saveLocSettings() {
   if (!activeLoc) { showToast('No location loaded. Reload and try again.'); return; }
-  const name    = document.getElementById('cfgName').value.trim();
-  const day     = parseInt(document.getElementById('cfgDay').value);
-  const maxAge  = parseInt(document.getElementById('cfgMaxAge').value || 12);
+  const name   = document.getElementById('cfgName').value.trim();
+  const day    = parseInt(document.getElementById('cfgDay').value);
+  const maxAge = parseInt(document.getElementById('cfgMaxAge').value || 12);
   if (!name) { showToast('Location name cannot be empty'); return; }
   const updates = { name, event_day: day, max_kid_age: maxAge };
   if (sb) {
     const { error } = await sb.from('locations').update(updates).eq('id', activeLoc.id);
     if (error) { showToast('Save failed: ' + error.message); return; }
-    // Refresh locations list so dropdown + locDrop reflect new name
-    Object.assign(activeLoc, updates);
-    updateBrandSub();
-    renderLocMgrList();
-    // Update locDrop option text
-    const opt = document.querySelector(`#locDrop option[value="${activeLoc.id}"]`);
-    if (opt) opt.textContent = name;
-    document.getElementById('editingLocName').textContent = name;
-  } else {
-    Object.assign(activeLoc, updates);
-    updateBrandSub();
-    renderLocMgrList();
   }
+  Object.assign(activeLoc, updates);
+  updateBrandSub();
+  renderLocMgrList();
+  const opt = document.querySelector('#locDrop option[value="' + activeLoc.id + '"]');
+  if (opt) opt.textContent = name;
+  document.getElementById('editingLocName').textContent = name;
   showToast('Location settings saved');
 }
 
@@ -2265,15 +2405,17 @@ async function saveDonAmounts() {
 }
 
 function renderLocMgrList() {
-  document.getElementById('locMgrList').innerHTML = locations.map(l => `
+  const el = document.getElementById('locMgrList');
+  if (!el) return;
+  el.innerHTML = locations.map(l => `
     <div class="row">
       <div class="ri">
-        <div class="rn">${l.name} ${l.id === activeLoc?.id ? '<span class="tag tg" style="margin-left:4px;">Selected</span>' : ''}</div>
-        <div class="rs">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][l.event_day]} · Max age: ${l.max_kid_age}</div>
+        <div class="rn">${l.name}${l.id===activeLoc?.id?' <span class="tag tg" style="margin-left:4px;">Selected</span>':''}</div>
+        <div class="rs">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][l.event_day]} · Max age: ${l.max_kid_age || 12}</div>
       </div>
       <div class="acts">
         <button class="ib" onclick="selectLocForEdit('${l.id}')">✎ Edit</button>
-        ${locations.length > 1 ? `<button class="ib danger" onclick="deleteLoc('${l.id}')">🗑</button>` : ''}
+        ${locations.length > 1 ? '<button class="ib danger" onclick="deleteLoc(\'' + l.id + '\')">🗑</button>' : ''}
       </div>
     </div>`).join('') || '<div class="empty">No locations</div>';
 }
@@ -2281,13 +2423,23 @@ function renderLocMgrList() {
 function selectLocForEdit(locId) {
   const loc = locations.find(l => l.id === locId);
   if (!loc) return;
+  // Update activeLoc FIRST so loadSettings reads the right location
   activeLoc = loc;
-  loadSettings();
-  document.getElementById('editingLocName').textContent = loc.name;
-  // Update locDrop
+  // Sync locDrop dropdown
   const sel = document.getElementById('locDrop');
-  if (sel.style.display !== 'none') sel.value = locId;
-  showToast('Editing: ' + loc.name);
+  if (sel && sel.style.display !== 'none') sel.value = locId;
+  // Now populate the edit form fields with this location's values
+  document.getElementById('cfgName').value   = loc.name || '';
+  document.getElementById('cfgDay').value    = String(loc.event_day ?? 0);
+  document.getElementById('cfgMaxAge').value = String(loc.max_kid_age || 12);
+  document.getElementById('cfgAmt1').value   = String(loc.amt_single_temple || 3000);
+  document.getElementById('cfgAmt2').value   = String(loc.amt_single_donor  || 300);
+  document.getElementById('cfgAmt3').value   = String(loc.amt_combo3  || 9000);
+  document.getElementById('cfgAmt4').value   = String(loc.amt_combo4  || 12000);
+  document.getElementById('cfgAmt5').value   = String(loc.amt_combo5  || 15000);
+  document.getElementById('editingLocName').textContent = loc.name;
+  renderLocMgrList();
+  showToast('Now editing: ' + loc.name);
 }
 
 function openAddLocModal() {
@@ -2304,19 +2456,30 @@ async function saveNewLoc() {
   const day  = parseInt(document.getElementById('newLocDay').value);
   const age  = parseInt(document.getElementById('newLocAge').value || 12);
   if (!name) { showToast('Enter location name'); return; }
-  const obj = { name, address: addr, city, event_name: 'Prabhu Pooja', event_day: day, max_kid_age: age,
-    amt_single_temple: 3000, amt_single_donor: 300, amt_combo3: 9000, amt_combo4: 12000, amt_combo5: 15000, is_active: true };
+  const obj = {
+    name, address: addr || null, city: city || null,
+    event_name: 'Prabhu Pooja', event_day: day, max_kid_age: age,
+    amt_single_temple: 3000, amt_single_donor: 300,
+    amt_combo3: 9000, amt_combo4: 12000, amt_combo5: 15000, is_active: true
+  };
   if (sb) {
     const { data, error } = await sb.from('locations').insert(obj).select().single();
-    if (error) { showToast('Failed: ' + error.message); return; }
+    if (error) {
+      if (error.message.includes('row-level security') || error.message.includes('RLS')) {
+        showToast('Permission denied. Run the SQL in schema.sql to grant admin location access, or add location directly in Supabase Table Editor.');
+      } else {
+        showToast('Failed: ' + error.message);
+      }
+      return;
+    }
     locations.push(data);
-    // Also assign this admin to the new location
-    await sb.from('profile_locations').insert({ profile_id: me.id, location_id: data.id });
+    if (me?.id) await sb.from('profile_locations').upsert(
+      { profile_id: me.id, location_id: data.id },
+      { onConflict: 'profile_id,location_id' }
+    );
   } else {
-    const nl = { ...obj, id: 'loc' + Date.now() };
-    locations.push(nl);
+    locations.push({ ...obj, id: 'loc' + Date.now() });
   }
-  // Rebuild locDrop
   const sel = document.getElementById('locDrop');
   sel.innerHTML = locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
   if (locations.length > 1) sel.style.display = 'block';
@@ -2327,20 +2490,23 @@ async function saveNewLoc() {
 
 async function deleteLoc(locId) {
   const loc = locations.find(l => l.id === locId);
-  confirm2(`Delete location "${loc?.name}"? All kids, donors, and attendance at this location will be permanently deleted.`, async () => {
-    if (sb) {
-      const { error } = await sb.from('locations').delete().eq('id', locId);
-      if (error) { showToast('Failed: ' + error.message); return; }
+  confirm2(
+    'Delete "' + (loc?.name || locId) + '"? All kids, donors, attendance at this location will be permanently deleted.',
+    async () => {
+      if (sb) {
+        const { error } = await sb.from('locations').delete().eq('id', locId);
+        if (error) { showToast('Failed: ' + error.message); return; }
+      }
+      locations = locations.filter(l => l.id !== locId);
+      if (activeLoc?.id === locId) activeLoc = locations[0] || null;
+      const sel = document.getElementById('locDrop');
+      sel.innerHTML = locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+      sel.style.display = locations.length > 1 ? 'block' : 'none';
+      renderLocMgrList();
+      if (activeLoc) loadSettings();
+      showToast('Location deleted');
     }
-    locations = locations.filter(l => l.id !== locId);
-    if (activeLoc?.id === locId) activeLoc = locations[0] || null;
-    const sel = document.getElementById('locDrop');
-    sel.innerHTML = locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
-    if (locations.length <= 1) sel.style.display = 'none';
-    renderLocMgrList();
-    loadSettings();
-    showToast('Location deleted');
-  });
+  );
 }
 function saveSBCfg() {
   const u = document.getElementById('cfgUrl').value.trim();
