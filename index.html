@@ -469,7 +469,13 @@ select.fi{cursor:pointer;}
     <!-- ════ SETTINGS ════ -->
     <div id="settings" class="screen">
       <div class="card">
-        <div class="ct">Location settings</div>
+        <div class="ct">Manage locations
+          <button class="btn bg" style="font-size:11px;padding:5px 10px;" onclick="openAddLocModal()">+ Add location</button>
+        </div>
+        <div id="locMgrList"><div class="empty">Loading…</div></div>
+      </div>
+      <div class="card">
+        <div class="ct">Edit selected location — <span id="editingLocName" style="color:var(--green);font-weight:600;"></span></div>
         <div class="fg"><label class="fl">Location name</label><input class="fi" id="cfgName" /></div>
         <div class="fi-row">
           <div class="fg"><label class="fl">Event day</label>
@@ -480,9 +486,9 @@ select.fi{cursor:pointer;}
               <option value="6">Saturday</option>
             </select>
           </div>
-          <div class="fg"><label class="fl">Max kid age (highlight)</label><input class="fi" type="number" id="cfgMaxAge" value="12"/></div>
+          <div class="fg"><label class="fl">Max kid age (highlight only)</label><input class="fi" type="number" id="cfgMaxAge" value="12" min="1" max="18"/></div>
         </div>
-        <button class="btn bg" onclick="saveLocSettings()">Save</button>
+        <button class="btn bg" onclick="saveLocSettings()">Save location settings</button>
       </div>
       <div class="card">
         <div class="ct">Donation amounts</div>
@@ -724,6 +730,30 @@ select.fi{cursor:pointer;}
       <button class="btn bo" style="margin-top:8px;font-size:12px;" onclick="copyUserWA()">📋 Copy message</button>
     </div>
     <div class="mf"><button class="btn bo" onclick="closeMo('mUser')">Cancel</button><button class="btn bg" id="saveUserBtn" onclick="saveUser()">Create</button></div>
+  </div>
+</div>
+
+<!-- ══ MODAL: Add Location ══ -->
+<div class="mo" id="mAddLoc">
+  <div class="md" style="max-width:400px;">
+    <div class="mh"><div class="mtitle">Add location</div><button class="ib" onclick="closeMo('mAddLoc')">✕</button></div>
+    <div class="mb2">
+      <div class="fg"><label class="fl">Location name *</label><input class="fi" id="newLocName" placeholder="e.g. Satellite, Ahmedabad"/></div>
+      <div class="fg"><label class="fl">Address</label><input class="fi" id="newLocAddr" placeholder="Street / Area"/></div>
+      <div class="fg"><label class="fl">City</label><input class="fi" id="newLocCity" placeholder="Ahmedabad"/></div>
+      <div class="fi-row">
+        <div class="fg"><label class="fl">Event day</label>
+          <select class="fi" id="newLocDay">
+            <option value="0">Sunday</option><option value="1">Monday</option>
+            <option value="2">Tuesday</option><option value="3">Wednesday</option>
+            <option value="4">Thursday</option><option value="5">Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+        </div>
+        <div class="fg"><label class="fl">Max kid age</label><input class="fi" type="number" id="newLocAge" value="12" min="1" max="18"/></div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn bo" onclick="closeMo('mAddLoc')">Cancel</button><button class="btn bg" onclick="saveNewLoc()">Add location</button></div>
   </div>
 </div>
 
@@ -1111,6 +1141,7 @@ function goTo(s, el) {
   if (s === 'financials') renderFinancials();
   if (s === 'users') renderUserList();
   if (s === 'gallery') renderGallery();
+  if (s === 'settings') { renderLocMgrList(); document.getElementById('editingLocName').textContent = activeLoc?.name || ''; }
   if (s === 'pgallery') renderParentGallery();
   if (s === 'pdonation') renderParentDonateInfo();
 }
@@ -1530,11 +1561,13 @@ async function saveKid() {
       if (up) { const { data: ul } = sb.storage.from('kid-photos').getPublicUrl(path); photo_url = ul.publicUrl; }
     }
     if (id) {
-      await sb.from('kids').update({ first_name:first, middle_name:middle, surname, dob, mobile, email, notes, ...(photo_url&&{photo_url}) }).eq('id',id);
+      const { error: updErr } = await sb.from('kids').update({ first_name:first, middle_name:middle, surname, dob, mobile:mobile||'', email:email||'', notes:notes||'', ...(photo_url&&{photo_url}) }).eq('id',id);
+      if (updErr) { showToast('Failed to update kid: ' + updErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
       await sb.from('kid_locations').delete().eq('kid_id',id);
-      await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:id,location_id:l})));
+      if (locIds.length) await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:id,location_id:l})));
     } else {
-      const { data: nd } = await sb.from('kids').insert({ first_name:first, middle_name:middle, surname, dob, mobile, email, notes, photo_url, is_active:true, quarterly_attendance:0, yearly_attendance:0, created_by:me?.id }).select().single();
+      const { data: nd, error: kidErr } = await sb.from('kids').insert({ first_name:first, middle_name:middle, surname, dob, mobile:mobile||'', email:email||'', notes:notes||'', photo_url:photo_url||null, is_active:true, quarterly_attendance:0, yearly_attendance:0, created_by:me?.id||null }).select().single();
+      if (kidErr) { showToast('Failed to save kid: ' + kidErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
       if (nd) await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:nd.id,location_id:l})));
     }
     await loadAll();
@@ -1882,7 +1915,30 @@ async function savePlan() {
   const prefDates = [...document.querySelectorAll('#planDateFields input[type=date]')].map(x=>x.value).filter(Boolean);
   const sshot   = document.getElementById('planScreenshot').files[0];
 
-  if (!did||!locId) { showToast('Select donor and location'); return; }
+  // Validation
+  if (!did)   { showToast('Select a donor'); return; }
+  if (!locId) { showToast('Select a location'); return; }
+
+  const paidStatus = document.getElementById('planPaidStatus').value;
+  const paidAmt    = parseInt(document.getElementById('planPaidAmt').value || 0);
+  const pmode      = document.getElementById('planMode').value;
+  const recvBy     = document.getElementById('planReceivedBy').value;
+  const pdate      = document.getElementById('planPaidDate').value;
+
+  // If paid in full: paid amount must equal total amount
+  if (paidStatus === 'paid' && paidAmt !== amt) {
+    showToast(`Paid amount must equal total (${fmtAmt(amt)}) when status is "Paid in full"`); return;
+  }
+  // If partial or paid: require payment mode, received by, and date
+  if (paidStatus !== 'unpaid') {
+    if (!pmode)   { showToast('Select payment mode (cash or online)'); return; }
+    if (!recvBy)  { showToast('Select who received the payment'); return; }
+    if (!pdate)   { showToast('Enter payment date'); return; }
+  }
+  // Online payment: require UTR
+  if (pmode === 'online' && !document.getElementById('planUtr').value.trim()) {
+    showToast('Enter UTR / transaction number for online payment'); return;
+  }
   const btn = document.getElementById('savePlanBtn');
   btn.innerHTML='<span class="spinner" style="border-top-color:white;border-color:rgba(255,255,255,.3)"></span>'; btn.disabled=true;
 
@@ -1940,7 +1996,7 @@ Date      : ${fmtD(plan.paid_date)}
 ${plan.preferred_dates?.length?`Dates     : ${plan.preferred_dates.map(fmtD).join(', ')}`:''}
 
 Thank you for your generous contribution. 🙏
-Jai Swaminarayan 🙏`;
+Jai Jinendra 🙏`;
   document.getElementById('receiptText').textContent = msg;
   document.getElementById('receiptPreview').style.display = 'block';
 }
@@ -2067,21 +2123,55 @@ async function saveUser() {
   const r     = document.getElementById('uRole').value;
   const pass  = document.getElementById('uPass').value;
   const locId = document.getElementById('uLoc').value;
-  const email = r==='parent'?(mob+'@parent.pooja'):document.getElementById('uEmail').value.trim();
-  if (!nm||!mob||!pass||pass.length<8) { showToast('Fill all fields. Password min 8 chars.'); return; }
+  const email = r==='parent' ? (mob+'@parent.pooja') : document.getElementById('uEmail').value.trim();
+
+  if (!nm)              { showToast('Enter full name'); return; }
+  if (!mob)             { showToast('Enter mobile'); return; }
+  if (!email)           { showToast('Enter email'); return; }
+  if (!pass || pass.length < 8) { showToast('Password must be at least 8 characters'); return; }
+  if (r !== 'parent' && !locId) { showToast('Select a location'); return; }
+
   const btn = document.getElementById('saveUserBtn');
-  btn.innerHTML='<span class="spinner" style="border-top-color:white;border-color:rgba(255,255,255,.3)"></span>'; btn.disabled=true;
+  btn.innerHTML = '<span class="spinner" style="border-top-color:white;border-color:rgba(255,255,255,.3)"></span>'; btn.disabled = true;
+
   if (sb) {
-    // In production: call a Supabase Edge Function to create auth user
-    // Edge function: supabase.auth.admin.createUser({email, password, user_metadata:{full_name,mobile,role}})
-    // Then insert profile_locations
-    showToast('Production: deploy Edge Function to create auth user securely');
+    // Step 1: Create auth user via Supabase Admin API (requires service_role key)
+    // Since we only have anon key in browser, we use signUp instead.
+    // The handle_new_user trigger auto-creates the profile row.
+    const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
+      email,
+      password: pass,
+      options: { data: { full_name: nm, mobile: mob, role: r } }
+    });
+    if (signUpErr) { showToast('Error: ' + signUpErr.message); btn.innerHTML='Create'; btn.disabled=false; return; }
+
+    const userId = signUpData?.user?.id;
+    if (!userId) { showToast('User created but ID not returned. Check Supabase Auth.'); btn.innerHTML='Create'; btn.disabled=false; return; }
+
+    // Step 2: Update profile with role and mobile (trigger may not set role correctly)
+    await sb.from('profiles').upsert({
+      id: userId, email, full_name: nm, mobile: mob, role: r
+    }, { onConflict: 'id' });
+
+    // Step 3: Assign to location
+    if (locId) {
+      await sb.from('profile_locations').upsert(
+        { profile_id: userId, location_id: locId },
+        { onConflict: 'profile_id,location_id' }
+      );
+    }
+
+    // Refresh user list
+    const { data: ud } = await sb.from('profiles').select('*').order('role');
+    users = ud || [];
+    renderUserList();
   } else {
-    users.push({id:'u'+Date.now(),full_name:nm,mobile:mob,email,role:r,location_ids:[locId]});
+    users.push({ id:'u'+Date.now(), full_name:nm, mobile:mob, email, role:r, location_ids:[locId] });
     renderUserList();
   }
-  btn.innerHTML='Create'; btn.disabled=false;
-  showToast(`${nm} created · Send WhatsApp credentials`);
+
+  btn.innerHTML = 'Create'; btn.disabled = false;
+  showToast(`${nm} created · Copy WhatsApp message and send credentials`);
   updateUserWA();
 }
 
@@ -2136,17 +2226,124 @@ function confirmQReset() {
 // ══════════════════════════════════════════════════
 async function saveLocSettings() {
   if (!activeLoc) { showToast('No location loaded. Reload and try again.'); return; }
-  const updates = { name:document.getElementById('cfgName').value, event_day:parseInt(document.getElementById('cfgDay').value), max_kid_age:parseInt(document.getElementById('cfgMaxAge').value||12) };
-  if (sb) { await sb.from('locations').update(updates).eq('id',activeLoc.id); await loadAll(); }
-  else { Object.assign(activeLoc,updates); updateBrandSub(); }
+  const name    = document.getElementById('cfgName').value.trim();
+  const day     = parseInt(document.getElementById('cfgDay').value);
+  const maxAge  = parseInt(document.getElementById('cfgMaxAge').value || 12);
+  if (!name) { showToast('Location name cannot be empty'); return; }
+  const updates = { name, event_day: day, max_kid_age: maxAge };
+  if (sb) {
+    const { error } = await sb.from('locations').update(updates).eq('id', activeLoc.id);
+    if (error) { showToast('Save failed: ' + error.message); return; }
+    // Refresh locations list so dropdown + locDrop reflect new name
+    Object.assign(activeLoc, updates);
+    updateBrandSub();
+    renderLocMgrList();
+    // Update locDrop option text
+    const opt = document.querySelector(`#locDrop option[value="${activeLoc.id}"]`);
+    if (opt) opt.textContent = name;
+    document.getElementById('editingLocName').textContent = name;
+  } else {
+    Object.assign(activeLoc, updates);
+    updateBrandSub();
+    renderLocMgrList();
+  }
   showToast('Location settings saved');
 }
+
 async function saveDonAmounts() {
   if (!activeLoc) { showToast('No location loaded. Reload and try again.'); return; }
-  const updates = { amt_single_temple:parseInt(document.getElementById('cfgAmt1').value||3000), amt_single_donor:parseInt(document.getElementById('cfgAmt2').value||300), amt_combo3:parseInt(document.getElementById('cfgAmt3').value||9000), amt_combo4:parseInt(document.getElementById('cfgAmt4').value||12000), amt_combo5:parseInt(document.getElementById('cfgAmt5').value||15000) };
-  if (sb) { await sb.from('locations').update(updates).eq('id',activeLoc.id); Object.assign(activeLoc,updates); }
-  else { Object.assign(activeLoc,updates); }
+  const updates = {
+    amt_single_temple : parseInt(document.getElementById('cfgAmt1').value || 3000),
+    amt_single_donor  : parseInt(document.getElementById('cfgAmt2').value || 300),
+    amt_combo3        : parseInt(document.getElementById('cfgAmt3').value || 9000),
+    amt_combo4        : parseInt(document.getElementById('cfgAmt4').value || 12000),
+    amt_combo5        : parseInt(document.getElementById('cfgAmt5').value || 15000),
+  };
+  if (sb) {
+    const { error } = await sb.from('locations').update(updates).eq('id', activeLoc.id);
+    if (error) { showToast('Save failed: ' + error.message); return; }
+  }
+  Object.assign(activeLoc, updates);
   showToast('Donation amounts saved');
+}
+
+function renderLocMgrList() {
+  document.getElementById('locMgrList').innerHTML = locations.map(l => `
+    <div class="row">
+      <div class="ri">
+        <div class="rn">${l.name} ${l.id === activeLoc?.id ? '<span class="tag tg" style="margin-left:4px;">Selected</span>' : ''}</div>
+        <div class="rs">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][l.event_day]} · Max age: ${l.max_kid_age}</div>
+      </div>
+      <div class="acts">
+        <button class="ib" onclick="selectLocForEdit('${l.id}')">✎ Edit</button>
+        ${locations.length > 1 ? `<button class="ib danger" onclick="deleteLoc('${l.id}')">🗑</button>` : ''}
+      </div>
+    </div>`).join('') || '<div class="empty">No locations</div>';
+}
+
+function selectLocForEdit(locId) {
+  const loc = locations.find(l => l.id === locId);
+  if (!loc) return;
+  activeLoc = loc;
+  loadSettings();
+  document.getElementById('editingLocName').textContent = loc.name;
+  // Update locDrop
+  const sel = document.getElementById('locDrop');
+  if (sel.style.display !== 'none') sel.value = locId;
+  showToast('Editing: ' + loc.name);
+}
+
+function openAddLocModal() {
+  ['newLocName','newLocAddr','newLocCity'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('newLocDay').value = '0';
+  document.getElementById('newLocAge').value = '12';
+  openMo('mAddLoc');
+}
+
+async function saveNewLoc() {
+  const name = document.getElementById('newLocName').value.trim();
+  const addr = document.getElementById('newLocAddr').value.trim();
+  const city = document.getElementById('newLocCity').value.trim();
+  const day  = parseInt(document.getElementById('newLocDay').value);
+  const age  = parseInt(document.getElementById('newLocAge').value || 12);
+  if (!name) { showToast('Enter location name'); return; }
+  const obj = { name, address: addr, city, event_name: 'Prabhu Pooja', event_day: day, max_kid_age: age,
+    amt_single_temple: 3000, amt_single_donor: 300, amt_combo3: 9000, amt_combo4: 12000, amt_combo5: 15000, is_active: true };
+  if (sb) {
+    const { data, error } = await sb.from('locations').insert(obj).select().single();
+    if (error) { showToast('Failed: ' + error.message); return; }
+    locations.push(data);
+    // Also assign this admin to the new location
+    await sb.from('profile_locations').insert({ profile_id: me.id, location_id: data.id });
+  } else {
+    const nl = { ...obj, id: 'loc' + Date.now() };
+    locations.push(nl);
+  }
+  // Rebuild locDrop
+  const sel = document.getElementById('locDrop');
+  sel.innerHTML = locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+  if (locations.length > 1) sel.style.display = 'block';
+  renderLocMgrList();
+  closeMo('mAddLoc');
+  showToast('Location added: ' + name);
+}
+
+async function deleteLoc(locId) {
+  const loc = locations.find(l => l.id === locId);
+  confirm2(`Delete location "${loc?.name}"? All kids, donors, and attendance at this location will be permanently deleted.`, async () => {
+    if (sb) {
+      const { error } = await sb.from('locations').delete().eq('id', locId);
+      if (error) { showToast('Failed: ' + error.message); return; }
+    }
+    locations = locations.filter(l => l.id !== locId);
+    if (activeLoc?.id === locId) activeLoc = locations[0] || null;
+    const sel = document.getElementById('locDrop');
+    sel.innerHTML = locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+    if (locations.length <= 1) sel.style.display = 'none';
+    renderLocMgrList();
+    loadSettings();
+    showToast('Location deleted');
+  });
 }
 function saveSBCfg() {
   const u = document.getElementById('cfgUrl').value.trim();
