@@ -1921,8 +1921,6 @@ async function savePlan() {
 
   const paidStatus = document.getElementById('planPaidStatus').value;
   const paidAmt    = parseInt(document.getElementById('planPaidAmt').value || 0);
-  const recvBy     = document.getElementById('planReceivedBy').value;
-  const pdate      = document.getElementById('planPaidDate').value;
 
   // If paid in full: paid amount must equal total amount
   if (paidStatus === 'paid' && paidAmt !== amt) {
