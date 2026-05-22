@@ -1580,29 +1580,29 @@ async function saveKid() {
       if (up) { const { data: ul } = sb.storage.from('kid-photos').getPublicUrl(path); photo_url = ul.publicUrl; }
     }
     if (id) {
-      const primaryLocId2 = locIds[0] || activeLoc?.id;
       const { error: updErr } = await sb.from('kids').update({
-        home_location_id: primaryLocId2,
         first_name:first, middle_name:middle||'', surname, dob,
         mobile:mobile||'', email:email||'', notes:notes||'',
         ...(photo_url && {photo_url})
       }).eq('id',id);
-      if (updErr) { showToast('RLS/DB error: ' + updErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
+      if (updErr) { showToast('DB error updating kid: ' + updErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
       await sb.from('kid_locations').delete().eq('kid_id',id);
-      if (locIds.length) await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:id,location_id:l})));
+      if (locIds.length) {
+        const { error: klErr } = await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:id,location_id:l})));
+        if (klErr) showToast('Kid updated but location link failed: ' + klErr.message);
+      }
     } else {
-      const primaryLocId = locIds[0] || activeLoc?.id;
       const { data: nd, error: kidErr } = await sb.from('kids').insert({
-        home_location_id: primaryLocId,
         first_name:first, middle_name:middle||'', surname, dob,
         mobile:mobile||'', email:email||'', notes:notes||'',
         photo_url:photo_url||null, is_active:true,
         quarterly_attendance:0, yearly_attendance:0,
         created_by:me?.id||null
       }).select().single();
-      if (kidErr) { showToast('RLS/DB error: ' + kidErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
+      if (kidErr) { showToast('DB error saving kid: ' + kidErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
       if (nd && locIds.length) {
-        await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:nd.id,location_id:l})));
+        const { error: klErr } = await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:nd.id,location_id:l})));
+        if (klErr) showToast('Kid saved but location link failed: ' + klErr.message);
       }
     }
     await loadAll();
@@ -2287,7 +2287,12 @@ function renderGallerySessionPicker() {
 
 async function openPhotoUpload() {
   const dates = renderGallerySessionPicker();
-  const sessionDate = prompt('Enter the Sunday date for photos (YYYY-MM-DD):Recent dates:' + dates.slice(0,6).join(''));
+  const sessionDate = prompt(
+    'Enter the Sunday date for photos (YYYY-MM-DD):
+Recent dates:
+' + dates.slice(0,6).join('
+')
+  );
   if (!sessionDate || !/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) {
     showToast('Invalid date format. Use YYYY-MM-DD'); return;
   }
@@ -2374,6 +2379,9 @@ async function saveLocSettings() {
     if (error) { showToast('Save failed: ' + error.message); return; }
   }
   Object.assign(activeLoc, updates);
+  // Sync the locations array entry too
+  const locIdx2 = locations.findIndex(l => l.id === activeLoc.id);
+  if (locIdx2 >= 0) Object.assign(locations[locIdx2], updates);
   updateBrandSub();
   renderLocMgrList();
   const opt = document.querySelector('#locDrop option[value="' + activeLoc.id + '"]');
@@ -2396,6 +2404,9 @@ async function saveDonAmounts() {
     if (error) { showToast('Save failed: ' + error.message); return; }
   }
   Object.assign(activeLoc, updates);
+  // Also update the same entry in the locations array so refresh doesn't lose it
+  const locIdx = locations.findIndex(l => l.id === activeLoc.id);
+  if (locIdx >= 0) Object.assign(locations[locIdx], updates);
   showToast('Donation amounts saved');
 }
 
