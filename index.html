@@ -1623,8 +1623,7 @@ async function saveKid() {
         // Fix: run --> UPDATE public.profiles SET role='admin' WHERE email='your@email.com';
         let msg = 'DB error: ' + kidErr.message;
         if (kidErr.message.includes('row-level security')) {
-          msg = 'RLS blocked: your profile role may not be set to admin. Run this in Supabase SQL Editor:
-UPDATE public.profiles SET role='admin' WHERE email='' + (me?.email||'your@email') + '';';
+          msg = 'RLS blocked: your profile role may not be set to admin. Run this in Supabase SQL Editor: UPDATE public.profiles SET role='admin' WHERE email='' + (me?.email||'your@email') + '';';
         }
         showToast(msg.slice(0, 120));
         console.error('saveKid error:', kidErr, 'Current user role:', role, 'me:', me);
