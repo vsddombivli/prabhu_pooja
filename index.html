@@ -295,6 +295,7 @@ select.fi{cursor:pointer;}
         </div>
         <button class="btn bg bfull" onclick="saveAndConnect()" style="margin-bottom:8px;">Save &amp; connect</button>
         <p class="tsm tm" style="text-align:center;">After saving, the page reloads and you can sign in.</p>
+        <button class="btn bo bfull" style="margin-top:8px;font-size:12px;" onclick="clearSBConfig()">🗑 Clear saved Supabase config</button>
         <div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:#92400E;">
           ⚠️ <strong>Important:</strong> This app must be served from a web server — not opened as a local file (<code>file://</code>).
           Running from <code>file://</code> blocks Supabase API calls due to browser security.<br><br>
@@ -444,7 +445,10 @@ select.fi{cursor:pointer;}
 
     <!-- ════ USERS ════ -->
     <div id="users" class="screen">
-      <div class="tb2"><button class="btn bg" onclick="openUserModal()">+ Create user</button></div>
+      <div class="tb2">
+        <button class="btn bg" onclick="openUserModal()">+ Create user</button>
+        <button class="btn bo" onclick="diagnoseSelf()" title="Check your profile role in Supabase">🔍 Diagnose my role</button>
+      </div>
       <div class="card" style="padding:0 18px;"><div id="userList"><div class="empty" style="padding:32px 0;">Loading…</div></div></div>
     </div>
 
@@ -1062,7 +1066,9 @@ async function enterApp() {
       else locations = [];
     }
   } else {
-    locations = DEMO_LOCS;
+    // sb exists but no locations found — not demo mode, real error
+    // Do not fall back to demo data when Supabase is configured
+    locations = [];
   }
 
   activeLoc = locations[0] || null;
@@ -1101,6 +1107,14 @@ async function enterApp() {
   updateBrandSub();
   loadSettings();
   await loadAll();
+}
+
+function clearSBConfig() {
+  localStorage.removeItem('sb_url');
+  localStorage.removeItem('sb_key');
+  localStorage.removeItem('prabhu-pooja-auth');
+  showToast('Supabase config cleared');
+  window.location.reload();
 }
 
 function saveAndConnect() {
@@ -1241,17 +1255,22 @@ async function loadAll() {
     photos = ph||[];
 
   } else {
-    // Demo
-    kids = DEMO_KIDS.filter(k => (DEMO_KL[k.id]||[]).includes(locId));
-    kidLocMap = DEMO_KL;
-    donors = DEMO_DONORS.filter(d => (DEMO_DL[d.id]||[]).includes(locId));
-    donorLocMap = DEMO_DL;
-    plans = DEMO_PLANS.filter(p => p.location_id === locId);
-    volunteers = DEMO_VOLS;
-    users = DEMO_VOLS.concat([{id:'a1',full_name:'Admin',mobile:'9800000001',role:'admin',email:'admin@temple.org'}]);
-    sessions = []; photos = [];
-    // Demo: Sneha attended both
-    attended.set('k3', new Set(['loc1','loc2']));
+    // Only use demo data if Supabase is genuinely not configured
+    if (!sb) {
+      kids = DEMO_KIDS.filter(k => (DEMO_KL[k.id]||[]).includes(locId));
+      kidLocMap = DEMO_KL;
+      donors = DEMO_DONORS.filter(d => (DEMO_DL[d.id]||[]).includes(locId));
+      donorLocMap = DEMO_DL;
+      plans = DEMO_PLANS.filter(p => p.location_id === locId);
+      volunteers = DEMO_VOLS;
+      users = DEMO_VOLS.concat([{id:'a1',full_name:'Admin',mobile:'9800000001',role:'admin',email:'admin@temple.org'}]);
+      sessions = []; photos = [];
+      attended.set('k3', new Set(['loc1','loc2']));
+    } else {
+      // Supabase configured but returned empty — real empty state
+      kids=[]; kidLocMap={}; donors=[]; donorLocMap={}; plans=[];
+      volunteers=[]; users=[]; sessions=[]; photos=[];
+    }
   }
 
   renderDashboard();
@@ -1599,7 +1618,18 @@ async function saveKid() {
         quarterly_attendance:0, yearly_attendance:0,
         created_by:me?.id||null
       }).select().single();
-      if (kidErr) { showToast('DB error saving kid: ' + kidErr.message); btn.innerHTML='Save'; btn.disabled=false; return; }
+      if (kidErr) {
+        // Common cause: your profile role is not 'admin' in Supabase
+        // Fix: run --> UPDATE public.profiles SET role='admin' WHERE email='your@email.com';
+        let msg = 'DB error: ' + kidErr.message;
+        if (kidErr.message.includes('row-level security')) {
+          msg = 'RLS blocked: your profile role may not be set to admin. Run this in Supabase SQL Editor:
+UPDATE public.profiles SET role='admin' WHERE email='' + (me?.email||'your@email') + '';';
+        }
+        showToast(msg.slice(0, 120));
+        console.error('saveKid error:', kidErr, 'Current user role:', role, 'me:', me);
+        btn.innerHTML='Save'; btn.disabled=false; return;
+      }
       if (nd && locIds.length) {
         const { error: klErr } = await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:nd.id,location_id:l})));
         if (klErr) showToast('Kid saved but location link failed: ' + klErr.message);
@@ -2094,6 +2124,58 @@ function renderFinancials() {
 // ══════════════════════════════════════════════════
 // USERS
 // ══════════════════════════════════════════════════
+async function diagnoseSelf() {
+  if (!sb) { showToast('Supabase not connected'); return; }
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { showToast('Not logged in'); return; }
+  const uid = session.user.id;
+  const email = session.user.email;
+
+  // Check profile
+  const { data: pr, error: prErr } = await sb.from('profiles').select('*').eq('id', uid).single();
+  if (prErr || !pr) {
+    showToast('No profile found for your user. Run setup SQL.');
+    console.error('Profile missing:', prErr);
+    alert(
+      'Your auth user exists but has NO profile row.\n\n' +
+      'Run this in Supabase SQL Editor:\n\n' +
+      "INSERT INTO public.profiles (id, email, full_name, role)\n" +
+      "VALUES ('" + uid + "', '" + email + "', 'Admin', 'admin');\n\n" +
+      "INSERT INTO public.profile_locations (profile_id, location_id)\n" +
+      "SELECT '" + uid + "', id FROM public.locations;"
+    );
+    return;
+  }
+
+  // Check location assignment
+  const { data: locs } = await sb.from('profile_locations').select('location_id').eq('profile_id', uid);
+
+  // Check is_admin() result
+  const { data: adminCheck } = await sb.rpc('is_admin').single().catch(() => ({data: null}));
+
+  const msg =
+    'Auth ID: ' + uid.slice(0,8) + '…
+' +
+    'Email: ' + email + '
+' +
+    'Profile role: ' + pr.role + '
+' +
+    'Locations assigned: ' + (locs?.length || 0) + '
+' +
+    'is_admin() returns: ' + (adminCheck ?? 'error - check console') + '
+
+' +
+    (pr.role !== 'admin' && pr.role !== 'superadmin'
+      ? '❌ Role is not admin! Fix:
+UPDATE public.profiles SET role='admin' WHERE id='' + uid + '';'
+      : locs?.length === 0
+        ? '❌ No location assigned! Fix:
+INSERT INTO public.profile_locations (profile_id, location_id) SELECT '' + uid + '', id FROM public.locations;'
+        : '✅ Role and location look correct. RLS should work.');
+
+  alert(msg);
+}
+
 function renderUserList() {
   const myId = me?.id;
   document.getElementById('userList').innerHTML = users.length ? users.map(u => {
@@ -2288,7 +2370,10 @@ function renderGallerySessionPicker() {
 async function openPhotoUpload() {
   const dates = renderGallerySessionPicker();
   const sessionDate = prompt(
-    'Enter the Sunday date for photos (YYYY-MM-DD):Recent dates:' + dates.slice(0,6).join('')
+    'Enter the Sunday date for photos (YYYY-MM-DD):
+Recent dates:
+' + dates.slice(0,6).join('
+')
   );
   if (!sessionDate || !/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) {
     showToast('Invalid date format. Use YYYY-MM-DD'); return;
