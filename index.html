@@ -1620,14 +1620,14 @@ async function saveKid() {
       }).select().single();
       if (kidErr) {
         // Common cause: your profile role is not 'admin' in Supabase
-        // Fix: run --> UPDATE public.profiles SET role='admin' WHERE email='your@email.com';
-        let msg = 'DB error: ' + kidErr.message;
-        if (kidErr.message.includes('row-level security')) {
-          msg = 'RLS blocked: your profile role may not be set to admin. Run this in Supabase SQL Editor: UPDATE public.profiles SET role='admin' WHERE email='' + (me?.email||'your@email') + '';';
+        let msg = "DB error: " + kidErr.message;
+        if (kidErr.message.includes("row-level security")) {
+          const fixSql = "UPDATE public.profiles SET role='admin' WHERE email='" + (me && me.email ? me.email : "your@email") + "'; -- then sign out and back in";
+          msg = "RLS error — your role is not admin in Supabase. Run in SQL Editor: " + fixSql;
+          console.error("RLS fix SQL to run:", fixSql);
         }
-        showToast(msg.slice(0, 120));
-        console.error('saveKid error:', kidErr, 'Current user role:', role, 'me:', me);
-        btn.innerHTML='Save'; btn.disabled=false; return;
+        showToast(msg.slice(0, 150));
+        console.error("saveKid error:", kidErr, "role:", role, "me:", me);
       }
       if (nd && locIds.length) {
         const { error: klErr } = await sb.from('kid_locations').insert(locIds.map(l=>({kid_id:nd.id,location_id:l})));
@@ -2124,56 +2124,41 @@ function renderFinancials() {
 // USERS
 // ══════════════════════════════════════════════════
 async function diagnoseSelf() {
-  if (!sb) { showToast('Supabase not connected'); return; }
+  if (!sb) { showToast("Supabase not connected"); return; }
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) { showToast('Not logged in'); return; }
+  if (!session) { showToast("Not logged in"); return; }
   const uid = session.user.id;
   const email = session.user.email;
 
-  // Check profile
-  const { data: pr, error: prErr } = await sb.from('profiles').select('*').eq('id', uid).single();
+  const { data: pr, error: prErr } = await sb.from("profiles").select("*").eq("id", uid).single();
   if (prErr || !pr) {
-    showToast('No profile found for your user. Run setup SQL.');
-    console.error('Profile missing:', prErr);
-    alert(
-      'Your auth user exists but has NO profile row.\n\n' +
-      'Run this in Supabase SQL Editor:\n\n' +
-      "INSERT INTO public.profiles (id, email, full_name, role)\n" +
-      "VALUES ('" + uid + "', '" + email + "', 'Admin', 'admin');\n\n" +
-      "INSERT INTO public.profile_locations (profile_id, location_id)\n" +
-      "SELECT '" + uid + "', id FROM public.locations;"
-    );
+    const sql1 = "INSERT INTO public.profiles (id, email, full_name, role) VALUES ('" + uid + "', '" + email + "', 'Admin', 'admin');";
+    const sql2 = "INSERT INTO public.profile_locations (profile_id, location_id) SELECT '" + uid + "', id FROM public.locations;";
+    alert("No profile found for your user.\n\nRun in Supabase SQL Editor:\n\n" + sql1 + "\n\n" + sql2);
     return;
   }
 
-  // Check location assignment
-  const { data: locs } = await sb.from('profile_locations').select('location_id').eq('profile_id', uid);
+  const { data: locs } = await sb.from("profile_locations").select("location_id").eq("profile_id", uid);
+  const locCount = locs ? locs.length : 0;
 
-  // Check is_admin() result
-  const { data: adminCheck } = await sb.rpc('is_admin').single().catch(() => ({data: null}));
+  let diagnosis = "Auth ID: " + uid.slice(0,8) + "...\n";
+  diagnosis += "Email: " + email + "\n";
+  diagnosis += "Profile role: " + pr.role + "\n";
+  diagnosis += "Locations assigned: " + locCount + "\n\n";
 
-  const msg =
-    'Auth ID: ' + uid.slice(0,8) + '…
-' +
-    'Email: ' + email + '
-' +
-    'Profile role: ' + pr.role + '
-' +
-    'Locations assigned: ' + (locs?.length || 0) + '
-' +
-    'is_admin() returns: ' + (adminCheck ?? 'error - check console') + '
+  if (pr.role !== "admin" && pr.role !== "superadmin") {
+    const fixSql = "UPDATE public.profiles SET role = 'admin' WHERE id = '" + uid + "';";
+    diagnosis += "PROBLEM: Role is not admin!\n\nFix — run in SQL Editor:\n" + fixSql + "\n\nThen sign out and sign back in.";
+  } else if (locCount === 0) {
+    const fixSql = "INSERT INTO public.profile_locations (profile_id, location_id) SELECT '" + uid + "', id FROM public.locations ON CONFLICT DO NOTHING;";
+    diagnosis += "PROBLEM: No location assigned!\n\nFix — run in SQL Editor:\n" + fixSql;
+  } else {
+    diagnosis += "Role and location look correct.\nIf RLS errors persist, sign out and sign back in to refresh your token.";
+  }
 
-' +
-    (pr.role !== 'admin' && pr.role !== 'superadmin'
-      ? '❌ Role is not admin! Fix:
-UPDATE public.profiles SET role='admin' WHERE id='' + uid + '';'
-      : locs?.length === 0
-        ? '❌ No location assigned! Fix:
-INSERT INTO public.profile_locations (profile_id, location_id) SELECT '' + uid + '', id FROM public.locations;'
-        : '✅ Role and location look correct. RLS should work.');
-
-  alert(msg);
+  alert(diagnosis);
 }
+
 
 function renderUserList() {
   const myId = me?.id;
@@ -2369,10 +2354,7 @@ function renderGallerySessionPicker() {
 async function openPhotoUpload() {
   const dates = renderGallerySessionPicker();
   const sessionDate = prompt(
-    'Enter the Sunday date for photos (YYYY-MM-DD):
-Recent dates:
-' + dates.slice(0,6).join('
-')
+    'Enter the Sunday date for photos (YYYY-MM-DD):Recent dates:' + dates.slice(0,6).join('')
   );
   if (!sessionDate || !/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) {
     showToast('Invalid date format. Use YYYY-MM-DD'); return;
