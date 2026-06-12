@@ -1006,17 +1006,21 @@ function enterApp() {
   // Hide Supabase config card from non-superadmin
   const sbCard = $('supabaseCfgCard');
   if (sbCard) sbCard.style.display = role === 'superadmin' ? 'block' : 'none';
-  // Set event day dropdown
-  if ($('cfgEventDay') && myLocation) {
-    $('cfgEventDay').value = String(myLocation.event_day ?? 0);
-    $('cfgFYMonth').value  = String(myLocation.fy_start_month ?? 4);
-  }
+  refreshLocationSettingsFields();
   if (me) $('myProfileInfo').innerHTML =
     `<b>Name:</b> ${me.full_name}<br>
      <b>Mobile:</b> ${me.mobile}<br>
      <b>Role:</b> ${me.role}<br>
      <b>Location:</b> ${myLocation?.name || '—'}<br>
      <b>User ID:</b> ${me.id.slice(0,8)}…`;
+}
+
+function refreshLocationSettingsFields() {
+  if (!myLocation) return;
+  const eventDayEl = $('cfgEventDay');
+  const fyMonthEl = $('cfgFYMonth');
+  if (eventDayEl) eventDayEl.value = String(myLocation.event_day ?? 0);
+  if (fyMonthEl) fyMonthEl.value = String(myLocation.fy_start_month ?? 4);
 }
 
 function buildNav() {
@@ -1049,6 +1053,7 @@ function buildNav() {
     wrap.querySelector('select').onchange = async function() {
       myLocation = allLocations.find(l => l.id === this.value) || null;
       $('topLoc').textContent = myLocation ? myLocation.name + ', ' + (myLocation.city||'') : '';
+      refreshLocationSettingsFields();
       await loadAll();
       await loadPhase2();
       goTo('dashboard');
