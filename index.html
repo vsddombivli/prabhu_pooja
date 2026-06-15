@@ -1494,18 +1494,22 @@ async function importKids(input) {
 }
 
 function exportKids() {
-  xlDown(kids.map(k => ({
-    'ID No'      : k.kid_no,
-    'First Name' : k.first_name,
-    'Last Name'  : k.last_name,
-    'DOB'        : k.dob,
-    'Age'        : age(k.dob),
-    'Gender'     : k.gender,
-    'Mobile'     : k.mobile,
-    'Password'   : k.password_plain,
-    'Points'     : k.quarterly_points || 0,
-    'Active'     : k.is_active ? 'Yes' : 'No',
-  })), 'kids');
+  const headers = { 'ID No':'', 'First Name':'', 'Last Name':'', 'DOB':'', 'Age':'', 'Gender':'', 'Mobile':'', 'Password':'', 'Points':'', 'Active':'' };
+  const rows = kids.length
+    ? kids.map(k => ({
+        'ID No'      : k.kid_no,
+        'First Name' : k.first_name,
+        'Last Name'  : k.last_name,
+        'DOB'        : k.dob,
+        'Age'        : age(k.dob),
+        'Gender'     : k.gender,
+        'Mobile'     : k.mobile,
+        'Password'   : k.password_plain,
+        'Points'     : k.quarterly_points || 0,
+        'Active'     : k.is_active ? 'Yes' : 'No',
+      }))
+    : [headers];
+  xlDown(rows, 'kids');
 }
 
 // ═══════════════════════════════════════════════════
