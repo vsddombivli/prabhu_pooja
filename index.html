@@ -1463,7 +1463,14 @@ async function importKids(input) {
   const reader = new FileReader();
   reader.onload = async e => {
     const wb   = XLSX.read(e.target.result, { type: 'binary' });
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    //const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    const rows = XLSX.utils.sheet_to_json(
+      wb.Sheets[wb.SheetNames[0]],
+      {
+        raw: false,
+        dateNF: 'yyyy-mm-dd'
+      }
+    );
     let count = 0;
     for (const row of rows) {
       const first  = String(row['First Name'] || row['first_name'] || '').trim();
