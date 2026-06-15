@@ -3134,10 +3134,10 @@ function _renderStockFinance() {
     <div class="metric"><div class="metric-val green" style="font-size:18px;">₹${donorIncome.toLocaleString('en-IN')}</div><div class="metric-lbl">Donor income</div></div>
     <div class="metric"><div class="metric-val ${surplus>=0?'green':'red'}" style="font-size:18px;">₹${Math.abs(surplus).toLocaleString('en-IN')}</div><div class="metric-lbl">${surplus>=0?'Surplus':'Deficit'}</div></div>` : ''}`;
 
-const bar = $('stockPLBar');
-if (bar) bar.style.display = isVol ? 'none' : 'block';
+  const bar = $('stockPLBar');
+  if (bar) bar.style.display = isVol ? 'none' : 'block';
   // ── P&L card
-  const bar = $('stockPLBar'); if(bar) bar.style.display='block';
+  //const bar = $('stockPLBar'); if(bar) bar.style.display='block';
   const pct = donorIncome > 0 ? Math.min(100, Math.round(totalExpense/donorIncome*100)) : 0;
   const fillColor = surplus>=0 ? 'var(--green)' : 'var(--red)';
   if (!isVol && $('stockPLContent')) $('stockPLContent').innerHTML = `
