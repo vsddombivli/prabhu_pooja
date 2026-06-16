@@ -965,12 +965,16 @@ async function loadProfile(uid) {
     const { data: locs } = await sb.from('locations').select('*').order('name');
     allLocations = locs || [];
     myLocation = allLocations[0] || null;  // default to first, can switch
+  } else if (role === 'parent') {
+      // Parents have no location — they see all their kids across locations
+      myLocation = null;
+      allLocations = [];
   } else if (role === 'admin' || role === 'volunteer') {
-    if (!pr.location_id) {
-      showErr('loginErr', 'No location assigned. Ask superadmin to assign your location.');
-      await sb.auth.signOut();
-      $('loginBtn').innerHTML = 'Sign in'; $('loginBtn').disabled = false; return;
-    }
+      if (!pr.location_id) {
+        showErr('loginErr', 'No location assigned. Ask superadmin to assign your location.');
+        await sb.auth.signOut();
+        $('loginBtn').innerHTML = 'Sign in'; $('loginBtn').disabled = false; return;
+      }
     const { data: loc } = await sb.from('locations').select('*').eq('id', pr.location_id).single();
     myLocation = loc;
     allLocations = [loc];
@@ -1461,6 +1465,40 @@ async function saveKid() {
     const { data: nd, error } = await sb.from('kids').insert(obj).select().single();
     if (error) { showErr('kidModalErr', error.message); btn.innerHTML='Save'; btn.disabled=false; return; }
     kids.push(nd);
+
+    // Create Supabase Auth account for parent mobile so they can log in
+    const parentEmail = toEmail(mobile);
+    const { data: adminSession } = await sb.auth.getSession();
+
+    const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
+      email    : parentEmail,
+      password : pass,
+      options  : { data: { full_name: first + ' ' + last + ' (parent)', mobile, role: 'parent' } }
+    });
+
+    // Restore admin session immediately
+    if (adminSession?.session) {
+      await sb.auth.setSession({
+        access_token : adminSession.session.access_token,
+        refresh_token: adminSession.session.refresh_token,
+      });
+    }
+
+    if (signUpErr && !signUpErr.message.includes('already registered')) {
+      // Auth account failed but kid row saved — warn but don't block
+      toast('Kid saved but parent login not created: ' + signUpErr.message);
+    } else if (signUpData?.user) {
+      // Upsert parent profile (one profile per mobile — multiple kids share it)
+      await sb.from('profiles').upsert({
+        id          : signUpData.user.id,
+        mobile,
+        full_name   : first + ' ' + last + ' (parent)',
+        role        : 'parent',
+        location_id : null,   // parents are not location-specific
+        is_active   : true,
+      }, { onConflict: 'id' });
+    }
+    // If already registered — parent profile already exists, just updated kid row, that's fine
   }
 
   btn.innerHTML = 'Save'; btn.disabled = false;
