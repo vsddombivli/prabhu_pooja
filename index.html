@@ -2659,7 +2659,11 @@ async function savePayment() {
 // EXPORT DONORS
 // ═══════════════════════════════════════════════════
 async function exportDonors() {
-  if (!donors.length) { toast('No donors to export'); return; }
+  if (!donors.length) {
+    xlDown([{ 'FY':'', 'Full Name':'', 'Mobile':'', 'Reference':'', 'Ref Mobile':'', 'Gift Source':'', 'No. of Sundays':'', 'Total Amount (₹)':'', 'Paid Amount (₹)':'', 'Balance (₹)':'', 'Payment Status':'', 'Sunday Dates':'' }], 'donors-template');
+    toast('No donors yet — blank template exported');
+    return;
+  }
   const rows = donors.map(d => {
     const payments = donorPayments[d.id] || [];
     const sundays  = donorSundays[d.id]  || [];
