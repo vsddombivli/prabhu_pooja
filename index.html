@@ -2777,6 +2777,9 @@ function renderGiftGallery() {
     const editBtn = (role==='admin'||role==='superadmin')
       ? '<button class="btn btn-gray gift-edit-btn" style="padding:3px 8px;font-size:11px;" data-gift-id="' + g.id + '">Edit</button>'
       : '';
+    const delBtn = role==='superadmin'
+      ? '<button class="btn btn-red gift-del-btn" style="padding:3px 8px;font-size:11px;" data-gift-id="' + g.id + '">Del</button>'
+      : '';
     return '<div class="gift-card" data-gift-id="' + g.id + '">' +
       '<div class="gift-img-wrap">' + img + '</div>' +
       '<div class="gift-body">' +
@@ -2785,7 +2788,7 @@ function renderGiftGallery() {
         '<div class="gift-meta">&#127978; ' + vName + '</div>' +
         '<div class="gift-mrp">&#8377;' + (g.mrp||0).toLocaleString('en-IN') + '</div>' +
       '</div>' +
-      '<div class="gift-foot">' + badge + editBtn + '</div>' +
+      '<div class="gift-foot">' + badge + editBtn + delBtn + '</div>' +
     '</div>';
   }).join('');
   
@@ -2796,8 +2799,23 @@ function renderGiftGallery() {
   el.querySelectorAll('.gift-edit-btn').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); openGiftModal(btn.dataset.giftId); };
   });
+  el.querySelectorAll('.gift-del-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); deleteGift(btn.dataset.giftId); };
+  });
 }
 
+async function deleteGift(id) {
+  const g = gifts.find(x => x.id === id); if (!g) return;
+  confirm2('Delete "' + g.name + '"? This cannot be undone.', async () => {
+    const { error } = await sb.from('gifts').delete().eq('id', id);
+    if (error) { toast('Error: ' + error.message); return; }
+    gifts = gifts.filter(x => x.id !== id);
+    giftStockSet.delete(id);
+    renderGiftGallery();
+    toast('Gift deleted');
+  });
+}
+  
 function openGiftDetail(id) {
   const g = gifts.find(x => x.id === id); if (!g) return;
   const v = g.vendors || {}, up = g.profiles || {};
