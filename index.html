@@ -1574,6 +1574,37 @@ async function importKids(input) {
       const { data: nd, error } = await sb.from('kids')
         .upsert(obj, { onConflict: 'kid_no,location_id' }).select().single();
       if (!error && nd) { kids = kids.filter(k => k.id !== nd.id); kids.push(nd); }
+
+      // Create parent auth account + profile (same logic as saveKid)
+      const parentEmail = toEmail(mobile);
+      const { data: adminSession } = await sb.auth.getSession();
+
+      const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
+        email    : parentEmail,
+        password : pass,
+        options  : { data: { full_name: first + ' ' + last + ' (parent)', mobile, role: 'parent' } }
+      });
+
+      // Restore admin session immediately
+      if (adminSession?.session) {
+        await sb.auth.setSession({
+          access_token : adminSession.session.access_token,
+          refresh_token: adminSession.session.refresh_token,
+        });
+      }
+
+      if (signUpData?.user) {
+        await sb.from('profiles').upsert({
+          id          : signUpData.user.id,
+          mobile,
+          full_name   : first + ' ' + last + ' (parent)',
+          role        : 'parent',
+          location_id : null,
+          is_active   : true,
+        }, { onConflict: 'id' });
+      }
+      // If signUpErr contains 'already registered' — parent exists, skip silently
+
       count++;
     }
     renderKidList(); renderDashboard();
