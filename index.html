@@ -787,8 +787,8 @@ let sb = null;
 
 function initSB() {
   if (sb) return true;
-  const url = localStorage.getItem('sb_url') || '';
-  const key = localStorage.getItem('sb_key') || '';
+  const url = localStorage.getItem('sb_url') || 'https://nyytdgrmwleemfaiaeqw.supabase.co';
+  const key = localStorage.getItem('sb_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55eXRkZ3Jtd2xlZW1mYWlhZXF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMTI2NjUsImV4cCI6MjA5NDU4ODY2NX0.vGyLIi8xHa7bqN23SZaF39ia-_K0Uui4fvBXh7laClE';
   if (!url || !key) return false;
   sb = window.supabase.createClient(url, key, {
     auth: { persistSession: true, autoRefreshToken: true, storageKey: 'pp-auth' }
