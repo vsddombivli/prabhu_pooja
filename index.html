@@ -8,7 +8,8 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:system-ui,sans-serif;background:#f5f5f5;color:#1a1a1a;font-size:14px;}
+body{font-family:system-ui,sans-serif;background:#f5f5f5;color:#1a1a1a;font-size:14px;overflow-x:hidden;width:100%;}
+html{overflow-x:hidden;}
 :root{
   --green:#1a9e6e;--gl:#e0f5ec;--gd:#0d6e4a;
   --red:#c0392b;--rl:#fdf0ee;
@@ -37,9 +38,13 @@ body{font-family:system-ui,sans-serif;background:#f5f5f5;color:#1a1a1a;font-size
 /* ── LOGIN ── */
 .login-wrap{
   min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;
-  background:
-    linear-gradient(rgba(255,255,255,.55), rgba(255,255,255,.55)),
-    url('assets/prabhu_pooja.jpg') center/cover no-repeat;
+  background-color:#f3ece0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.45), rgba(255,255,255,.45)),
+    url('assets/prabhu_pooja.jpg');
+  background-size:contain;
+  background-position:center 20%;
+  background-repeat:no-repeat;
 }
 .login-card{
   background:rgba(255,255,255,.55);
@@ -450,8 +455,8 @@ select.fi{cursor:pointer;}
             <div class="card-title" style="margin:0;">Gift stock purchases</div>
             <button class="btn btn-green" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openStockEntryModal()">+ Add purchase</button>
           </div>
-          <div style="overflow-x:auto;">
-            <table class="tbl" id="stockTable">
+          <div style="overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;">
+            <table class="tbl" id="stockTable" style="min-width:640px;">
               <thead><tr>
                 <th>Gift</th><th>Qty bought</th><th>Qty left</th><th>Buy price (₹)</th><th>Transport (₹)</th><th>Total cost (₹)</th><th>Date</th><th></th>
               </tr></thead>
