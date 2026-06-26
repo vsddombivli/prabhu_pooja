@@ -33,7 +33,7 @@ html{overflow-x:hidden;}
 .nav-btn{padding:10px 14px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;border:none;background:none;color:var(--gray);border-bottom:2px solid transparent;font-family:inherit;}
 .nav-btn.active{color:var(--green);border-bottom-color:var(--green);}
 .content{padding:16px;flex:1;max-width:800px;margin:0 auto;width:100%;}
-.screen{display:none;}.screen.active{display:block;}
+.screen{display:none;max-width:100%;}.screen.active{display:block;}
 
 /* ── LOGIN ── */
 .login-wrap{
@@ -41,7 +41,7 @@ html{overflow-x:hidden;}
   background-color:#f3ece0;
   background-image:
     linear-gradient(rgba(255,255,255,.45), rgba(255,255,255,.45)),
-    url('assets/prabhu_pooja.jpg');
+    url('assets/login-bg.jpg');
   background-size:cover;
   background-position:center 20%;
   background-repeat:no-repeat;
@@ -87,7 +87,9 @@ select.fi{cursor:pointer;}
 .alert-blue{background:var(--bl);color:var(--blue);border:1px solid rgba(37,99,235,.2);}
 
 /* ── CARDS ── */
-.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;}
+.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;max-width:100%;overflow:hidden;}
+.scroll-hint{font-size:11px;color:var(--gray);padding:0 16px 8px;display:none;}
+@media(max-width:680px){.scroll-hint{display:block;}}
 .card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray);margin-bottom:12px;}
 
 /* ── METRICS ── */
@@ -455,8 +457,9 @@ select.fi{cursor:pointer;}
             <div class="card-title" style="margin:0;">Gift stock purchases</div>
             <button class="btn btn-green" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openStockEntryModal()">+ Add purchase</button>
           </div>
-          <div style="overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;">
-            <table class="tbl" id="stockTable" style="min-width:640px;">
+          <div class="scroll-hint">⟷ Swipe table left/right to see all columns</div>
+          <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+            <table class="tbl" id="stockTable" style="min-width:680px;">
               <thead><tr>
                 <th>Gift</th><th>Qty bought</th><th>Qty left</th><th>Buy price (₹)</th><th>Transport (₹)</th><th>Total cost (₹)</th><th>Date</th><th></th>
               </tr></thead>
