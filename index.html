@@ -1025,7 +1025,14 @@ function enterApp() {
   const roleTag = $('roleTag');
   roleTag.textContent = role.charAt(0).toUpperCase() + role.slice(1);
   roleTag.className = 'tag ' + (role==='superadmin' ? 'tag-red' : role==='admin' ? 'tag-amber' : role==='volunteer' ? 'tag-green' : 'tag-blue');
-  $('topName').textContent   = me?.full_name || '—';
+  $('topName').textContent = role === 'parent'
+  ? (() => {
+      const clean = (me?.full_name || '').replace(/\s*\(parent\)\s*$/i, '').trim();
+      const parts = clean.split(/\s+/);
+      const familyName = parts.length > 1 ? parts.slice(1).join(' ') : clean;
+      return (familyName || 'Parent') + ' · ' + (me?.mobile || '');
+    })()
+  : (me?.full_name || '—');
   $('topMobile').textContent = me?.mobile    || '—';
 
   // Location in topbar
