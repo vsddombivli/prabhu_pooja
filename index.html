@@ -1354,6 +1354,7 @@ function renderKidList() {
     return true;
   });
 
+  if (!$('kidTbody')) return;
   $('kidTbody').innerHTML = list.length
     ? list.map(k => {
         const c = avColor(k.full_name);
@@ -1598,11 +1599,12 @@ async function handleKidPhotoUpload(inp, id) {
   if (error) { toast('Upload failed: ' + error.message); return; }
   const { data: ul } = sb.storage.from('kid-photos').getPublicUrl(path);
   if (ul?.publicUrl) {
-    await sb.from('kids').update({ photo_url: ul.publicUrl }).eq('id', id);
-    const k = kids.find(x => x.id === id);
-    if (k) k.photo_url = ul.publicUrl + '?t=' + Date.now();
-    renderKidList();
-    toast('Photo updated');
+      await sb.from('kids').update({ photo_url: ul.publicUrl }).eq('id', id);
+      const k = kids.find(x => x.id === id);
+      if (k) k.photo_url = ul.publicUrl + '?t=' + Date.now();
+      goTo('kids');   // ensure kids screen is active before rendering
+      renderKidList();
+      toast('Photo updated');
   }
 }
 
