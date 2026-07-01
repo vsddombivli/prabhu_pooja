@@ -399,7 +399,7 @@ select.fi{cursor:pointer;}
     <!-- ── GIFT GALLERY (all roles except parent) ── -->
     <div id="screen-gifts" class="screen">
       <div class="toolbar" id="giftToolbar" style="flex-wrap:wrap;gap:8px;">
-        <button class="btn btn-green" onclick="openGiftModal()">+ Add gift</button>
+        <button class="btn btn-green" id="addGiftBtn" onclick="openGiftModal()">+ Add gift</button>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
         <div class="search-wrap" style="flex:1;min-width:160px;margin-bottom:0;">
@@ -751,7 +751,7 @@ select.fi{cursor:pointer;}
     <div class="fg"><label class="fl">Amount received (₹) *</label><input class="fi" type="number" id="payAmount" placeholder="3000"/></div>
     <div class="fi-2">
       <div class="fg"><label class="fl">Payment mode *</label>
-        <select class="fi" id="payMode">
+        <select class="fi" id="payMode" onchange="togglePayRefField()">
           <option value="cash">Cash</option>
           <option value="online">Online / UPI</option>
           <option value="cheque">Cheque</option>
@@ -761,6 +761,10 @@ select.fi{cursor:pointer;}
     </div>
     <div class="fg"><label class="fl">Received by (volunteer)</label>
       <select class="fi" id="payReceivedBy"></select>
+    </div>
+    <div class="fg" id="payRefWrap" style="display:none;">
+      <label class="fl" id="payRefLabel">Transaction reference</label>
+      <input class="fi" id="payRef" placeholder="UTR / Cheque no. / Transaction ID"/>
     </div>
     <div class="fg"><label class="fl">Notes</label><input class="fi" id="payNotes" placeholder="Optional"/></div>
     <div id="payModalErr" class="alert alert-red"></div>
@@ -1110,7 +1114,6 @@ function buildNav() {
         ['gifts','Gifts'],
         ...(isAdmin ? [['users','Users']] : []),
         ...(isAdmin ? [['vendors','Vendors']] : []),
-        ...(role === 'volunteer' ? [['donors','💰 Payments']] : []),
         ...(isAdmin ? [['donors','Donors']] : []),
         ['stock', role === 'volunteer' ? '📦 Stock' : '📦 Stock & Finance'],
         ...(isSuperAdmin ? [['locations','Locations']] : []),
@@ -2733,13 +2736,28 @@ async function saveSundayNote() {
   closeModal('sundayNoteModal');
   toast('Note saved');
 }
-
+function togglePayRefField() {
+  const mode = $('payMode').value;
+  const wrap = $('payRefWrap');
+  const label = $('payRefLabel');
+  if (mode === 'online') {
+    wrap.style.display = 'block';
+    label.textContent = 'UTR / Transaction ID';
+  } else if (mode === 'cheque') {
+    wrap.style.display = 'block';
+    label.textContent = 'Cheque number';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
 // ── PAYMENTS ─────────────────────────────────────────
 function openPaymentModal(donorId) {
   $('payDonorId').value = donorId;
   ['payAmount','payNotes'].forEach(x => $(x).value = '');
   $('payMode').value = 'cash';
   $('payDate').value = TODAY;
+  $('payRef').value = '';
+  togglePayRefField();
   hideErr('payModalErr');
 
   // Populate received-by with volunteers
@@ -2758,15 +2776,28 @@ function openPaymentModal(donorId) {
 }
 
 async function savePayment() {
+  if (role === 'volunteer') { toast('Only admin can record donor payments'); return; }
   const donorId  = $('payDonorId').value;
   const amount   = parseInt($('payAmount').value || 0);
   const mode     = $('payMode').value;
   const date     = $('payDate').value;
   const recvBy   = $('payReceivedBy').value;
   const notes    = $('payNotes').value.trim();
+  const txnRef   = $('payRef').value.trim();
 
   if (!amount || amount <= 0) { showErr('payModalErr','Enter a valid amount'); return; }
   if (!date)                  { showErr('payModalErr','Enter payment date');    return; }
+
+  // Block overpayment beyond remaining balance
+  const donorObj = donors.find(x => x.id === donorId);
+  if (donorObj) {
+    const alreadyPaid = (donorPayments[donorId]||[]).reduce((s,p) => s+(p.amount||0), 0);
+    const remaining   = (donorObj.amount||0) - alreadyPaid;
+    if (amount > remaining) {
+      showErr('payModalErr', `Amount exceeds remaining balance of ₹${remaining.toLocaleString('en-IN')}. Enter ₹${remaining.toLocaleString('en-IN')} or less.`);
+      return;
+    }
+  }
 
   const btn = $('paySaveBtn');
   btn.innerHTML = '<span class="spin"></span>'; btn.disabled = true;
@@ -2778,6 +2809,7 @@ async function savePayment() {
     paid_date   : date,
     received_by : recvBy || null,
     notes       : notes  || null,
+    txn_ref     : txnRef || null,
   }).select().single();
 
   if (error) { showErr('payModalErr', error.message); btn.innerHTML='Save payment'; btn.disabled=false; return; }
@@ -2866,6 +2898,8 @@ async function loadGiftData() {
 }
 
 function renderGiftGallery() {
+  const canManageGifts = role === 'admin' || role === 'superadmin';
+  if ($('addGiftBtn')) $('addGiftBtn').style.display = canManageGifts ? '' : 'none';
   // Category filter dropdown
   const catSel = $('giftCatFilter');
   if (catSel) {
@@ -3024,6 +3058,7 @@ function openGiftModal(id) {
 }
 
 async function saveGift() {
+  if (role !== 'admin' && role !== 'superadmin') { toast('Only admin can add or edit gifts'); return; }
   const id = $('giftId').value, name = $('giftName').value.trim();
   const catId = $('giftCategory').value, vendorId = $('giftVendor').value;
   const mrp = parseInt($('giftMrp').value || 0), desc = $('giftDesc').value.trim();
