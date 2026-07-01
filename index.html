@@ -846,6 +846,7 @@ let myLocation = null;   // location row for admin/volunteer
 
 let kids = [];           // all kids for current location
 let attendance = {};     // { kid_id: attendance_row } for today
+let allKidAtt  = {};     // { kid_id: [attendance rows] } last 2 months
 let attFilter = 'all';
 let kidFilter = 'all';
 
@@ -918,7 +919,21 @@ function compressImage(file, maxBytes = 25 * 1024) {
     img.src = url;
   });
 }
-
+function lastNEventDays(n) {
+  // Returns last n event days (based on location event_day) as date strings
+  const eventDay = myLocation?.event_day ?? 0;
+  const days = [];
+  const d = new Date();
+  // Walk backwards up to 180 days to find n event days
+  for (let i = 0; i < 180 && days.length < n; i++) {
+    const check = new Date(d);
+    check.setDate(d.getDate() - i);
+    if (check.getDay() === eventDay) {
+      days.unshift(check.toISOString().split('T')[0]);
+    }
+  }
+  return days;
+}
 function perfBar(pct) {
   let color, label, emoji;
   if (pct === 0)        { color='#e53e3e'; label='Very Poor';         emoji='😔'; }
@@ -1317,15 +1332,28 @@ function renderAttList() {
         const av = k.photo_url
           ? `<div class="av" style="cursor:pointer;" onclick="viewKidPhoto('${k.photo_url}','${k.full_name}')" title="Click to view photo"><img src="${k.photo_url}" alt=""/></div>`
           : `<div class="av" style="background:${c.bg};color:${c.fg};font-size:11px;">${ini(k.full_name)}</div>`;
-        return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
-          ${av}
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${k.full_name}</div>
-            <div style="font-size:11px;color:var(--gray);">#${k.kid_no} · ${age(k.dob)}</div>
+        // Performance bar — needs recent attendance data
+        const kAtts = allKidAtt[k.id] || [];
+        const attDatesSet = new Set(kAtts.map(a => a.event_date));
+        const now3 = new Date();
+        const twoMonthsAgo3 = new Date(now3.getFullYear(), now3.getMonth() - 2, now3.getDate());
+        const recentEvDays = lastNEventDays(9).filter(s => new Date(s + 'T00:00:00') >= twoMonthsAgo3);
+        const recentPres  = recentEvDays.filter(s => attDatesSet.has(s)).length;
+        const pct3 = recentEvDays.length > 0 ? Math.round(recentPres / recentEvDays.length * 100) : 0;
+
+        return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:10px;">
+            ${av}
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${k.full_name}</div>
+              <div style="font-size:11px;color:var(--gray);">#${k.kid_no} · ${age(k.dob)}</div>
+            </div>
+            <button class="att-btn ${pr?'present':''}" onclick="toggleAtt('${k.id}')" ${dis}>
+              ${pr ? '✓ Present' : 'Mark'}
+            </button>
+            ${(role==='admin'||role==='superadmin') ? `<button class="btn btn-gray" style="padding:4px 8px;font-size:11px;" onclick="openKidAttHistory('${k.id}')">History</button>` : ''}
           </div>
-          <button class="att-btn ${pr?'present':''}" onclick="toggleAtt('${k.id}')" ${dis}>
-            ${pr ? '✓ Present' : 'Mark'}
-          </button>
+          ${perfBar(pct3)}
         </div>`;
       }).join('')
     : '<div style="padding:24px 0;text-align:center;color:var(--gray);">No kids match.</div>';
@@ -1625,6 +1653,89 @@ function viewKidPhoto(url, name) {
     <div class="lb-name">${name}</div>`;
   lb.addEventListener('click', e => { if (e.target === lb) lb.remove(); });
   document.body.appendChild(lb);
+}
+async function openKidAttHistory(kidId) {
+  const k = kids.find(x => x.id === kidId);
+  if (!k) return;
+  $('kidAttHistoryTitle').textContent = k.full_name + ' — Attendance history';
+  $('kidAttHistoryBody').innerHTML = '<div style="text-align:center;padding:20px;color:var(--gray);">Loading…</div>';
+  openModal('kidAttHistoryModal');
+
+  // Get all event days for last 2 months
+  const eventDays = lastNEventDays(9);
+  const { data: attRows } = await sb.from('attendance')
+    .select('*').eq('kid_id', kidId).in('event_date', eventDays);
+  const attMap = {};
+  (attRows || []).forEach(a => attMap[a.event_date] = a);
+
+  // Compute perf
+  const presentCount = eventDays.filter(d => attMap[d]).length;
+  const pct = eventDays.length > 0 ? Math.round(presentCount / eventDays.length * 100) : 0;
+
+  $('kidAttHistoryBody').innerHTML = `
+    ${perfBar(pct)}
+    <div style="margin-top:14px;">
+      ${eventDays.map(d => {
+        const pr = !!attMap[d];
+        const dLabel = new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
+          <div>
+            <div style="font-size:13px;font-weight:600;">${dLabel}</div>
+            <div style="font-size:11px;color:${pr?'var(--green)':'var(--gray)'};">${pr ? '✓ Present' : '✗ Absent'}</div>
+          </div>
+          <button class="btn ${pr?'btn-red':'btn-green'}" style="padding:4px 12px;font-size:12px;"
+            onclick="toggleHistAtt('${kidId}','${d}',${pr},this)">
+            ${pr ? 'Unmark' : 'Mark present'}
+          </button>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+async function toggleHistAtt(kidId, date, isPresent, btn) {
+  btn.disabled = true; btn.textContent = '…';
+  if (isPresent) {
+    const { error } = await sb.from('attendance').delete()
+      .eq('kid_id', kidId).eq('event_date', date);
+    if (error) { toast('Error: ' + error.message); btn.disabled = false; return; }
+    // Subtract points
+    const k = kids.find(x => x.id === kidId);
+    if (k) {
+      k.quarterly_points = Math.max(0, (k.quarterly_points || 0) - 10);
+      await sb.from('kids').update({ quarterly_points: k.quarterly_points }).eq('id', kidId);
+    }
+  } else {
+    const { error } = await sb.from('attendance').insert({
+      kid_id: kidId, location_id: myLocation.id,
+      event_date: date, points: 10, marked_by: me.id
+    });
+    if (error) { toast('Error: ' + error.message); btn.disabled = false; return; }
+    const k = kids.find(x => x.id === kidId);
+    if (k) {
+      k.quarterly_points = (k.quarterly_points || 0) + 10;
+      await sb.from('kids').update({ quarterly_points: k.quarterly_points }).eq('id', kidId);
+    }
+  }
+  // Refresh allKidAtt and re-open modal
+  const twoMonthsBack = new Date();
+  twoMonthsBack.setMonth(twoMonthsBack.getMonth() - 2);
+  const { data: recentAtt } = await sb.from('attendance')
+    .select('kid_id, event_date').eq('location_id', myLocation.id)
+    .gte('event_date', twoMonthsBack.toISOString().split('T')[0]);
+  allKidAtt = {};
+  (recentAtt || []).forEach(a => {
+    if (!allKidAtt[a.kid_id]) allKidAtt[a.kid_id] = [];
+    allKidAtt[a.kid_id].push(a);
+  });
+  // Also refresh today's attendance
+  if (date === TODAY) {
+    const { data: ad } = await sb.from('attendance')
+      .select('*').eq('location_id', myLocation.id).eq('event_date', TODAY);
+    attendance = {};
+    (ad || []).forEach(a => attendance[a.kid_id] = a);
+  }
+  openKidAttHistory(kidId); // refresh modal
+  renderAttList();
 }
 function uploadKidPhoto(id) {
   const k = kids.find(x => x.id === id);
@@ -2011,7 +2122,22 @@ async function switchFY(fy, btn) {
 async function loadPhase2() {
   if (!sb || !myLocation) return;
   if (!activeFY) activeFY = currentFY();
-  await Promise.all([loadDonors(), loadAllUsers(), loadAllLocations(), loadGiftData()]);
+  await Promise.all([loadDonors(), loadAllUsers(), loadAllLocations(), loadGiftData(), loadRecentAttendance()]);
+}
+
+async function loadRecentAttendance() {
+  if (!sb || !myLocation) return;
+  const twoMonthsBack = new Date();
+  twoMonthsBack.setMonth(twoMonthsBack.getMonth() - 2);
+  const { data: recentAtt } = await sb.from('attendance')
+    .select('kid_id, event_date')
+    .eq('location_id', myLocation.id)
+    .gte('event_date', twoMonthsBack.toISOString().split('T')[0]);
+  allKidAtt = {};
+  (recentAtt || []).forEach(a => {
+    if (!allKidAtt[a.kid_id]) allKidAtt[a.kid_id] = [];
+    allKidAtt[a.kid_id].push(a);
+  });
 }
 
 async function loadDonors() {
@@ -3844,6 +3970,18 @@ async function deleteMiscExp(id) {
   </div>
 </div>
 </div>
-
+<!-- MODAL: Kid Attendance History -->
+<div class="modal-overlay" id="kidAttHistoryModal">
+<div class="modal" style="max-width:480px;">
+  <div class="modal-head">
+    <div class="modal-title" id="kidAttHistoryTitle">Attendance history</div>
+    <button style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--gray);" onclick="closeModal('kidAttHistoryModal')">&#x2715;</button>
+  </div>
+  <div class="modal-body" id="kidAttHistoryBody" style="max-height:60vh;overflow-y:auto;"></div>
+  <div class="modal-foot">
+    <button class="btn btn-gray" onclick="closeModal('kidAttHistoryModal')">Close</button>
+  </div>
+</div>
+</div>
 </body>
 </html>
