@@ -879,25 +879,63 @@ function toast(msg, dur=3000) {
   clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), dur);
 }
 
-function compressImage(file, maxPx = 800, quality = 0.6) {
+function compressImage(file, maxBytes = 25 * 1024) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width > maxPx || height > maxPx) {
-        if (width >= height) { height = Math.round(height * maxPx / width); width = maxPx; }
-        else                 { width  = Math.round(width  * maxPx / height); height = maxPx; }
+
+      function tryCompress(maxPx, quality) {
+        let { width, height } = img;
+        if (width > maxPx || height > maxPx) {
+          if (width >= height) { height = Math.round(height * maxPx / width); width = maxPx; }
+          else                 { width  = Math.round(width  * maxPx / height); height = maxPx; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob => {
+          if (!blob) { reject(new Error('Compression failed')); return; }
+          if (blob.size <= maxBytes) {
+            resolve(blob);
+          } else if (quality > 0.1) {
+            // Reduce quality iteratively
+            tryCompress(maxPx, Math.max(0.1, quality - 0.1));
+          } else if (maxPx > 200) {
+            // If quality is rock bottom, shrink dimensions too
+            tryCompress(Math.round(maxPx * 0.75), 0.5);
+          } else {
+            // Best effort — give up and resolve what we have
+            resolve(blob);
+          }
+        }, 'image/jpeg', quality);
       }
-      const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Compression failed')), 'image/jpeg', quality);
+
+      tryCompress(600, 0.7);
     };
     img.onerror = reject;
     img.src = url;
   });
+}
+
+function perfBar(pct) {
+  let color, label, emoji;
+  if (pct === 0)        { color='#e53e3e'; label='Very Poor';         emoji='😔'; }
+  else if (pct < 30)    { color='#dd6b20'; label='Poor';              emoji='😐'; }
+  else if (pct < 60)    { color='#d69e2e'; label='Good';              emoji='🙂'; }
+  else if (pct < 100)   { color='#38a169'; label='Very Good';         emoji='😊'; }
+  else                  { color='#6b46c1'; label='Exceptional! 🌟';   emoji='🏆'; }
+  return `
+    <div style="margin-top:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+        <span style="font-weight:600;color:${color};">${emoji} ${label}</span>
+        <span style="color:var(--gray);">${pct}% attendance</span>
+      </div>
+      <div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width .4s;"></div>
+      </div>
+    </div>`;
 }
 
 function confirm2(msg, cb) {
@@ -1807,6 +1845,13 @@ async function loadParentKids() {
       else break;
     }
 
+    // Performance: last 2 months event days
+    const now2 = new Date();
+    const twoMonthsAgo = new Date(now2.getFullYear(), now2.getMonth() - 2, now2.getDate());
+    const recentSundays = sundays.filter(s => new Date(s + 'T00:00:00') >= twoMonthsAgo);
+    const recentPresent = recentSundays.filter(s => attDates.has(s)).length;
+    const perfPct = recentSundays.length > 0 ? Math.round(recentPresent / recentSundays.length * 100) : 0;
+
     return `<div class="kid-card">
       <div class="kid-card-head">
         <div class="av" style="width:48px;height:48px;font-size:16px;background:${c.bg};color:${c.fg};">
@@ -1834,6 +1879,7 @@ async function loadParentKids() {
         <span>🟢 Present &nbsp; ⬜ Absent</span>
         <span style="margin-left:auto;">Each Sunday = 10 pts</span>
       </div>
+      ${perfBar(perfPct)}
     </div>`;
   }).join('');
 }
