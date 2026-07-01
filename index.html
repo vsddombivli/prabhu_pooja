@@ -936,21 +936,19 @@ function lastNEventDays(n) {
 }
 function perfBar(pct) {
   let color, label, emoji;
-  if (pct === 0)        { color='#e53e3e'; label='Very Poor';         emoji='😔'; }
-  else if (pct < 30)    { color='#dd6b20'; label='Poor';              emoji='😐'; }
-  else if (pct < 60)    { color='#d69e2e'; label='Good';              emoji='🙂'; }
-  else if (pct < 100)   { color='#38a169'; label='Very Good';         emoji='😊'; }
-  else                  { color='#6b46c1'; label='Exceptional! 🌟';   emoji='🏆'; }
-  return `
-    <div style="margin-top:10px;">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
-        <span style="font-weight:600;color:${color};">${emoji} ${label}</span>
-        <span style="color:var(--gray);">${pct}% attendance</span>
-      </div>
-      <div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
-        <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width .4s;"></div>
-      </div>
-    </div>`;
+  if (pct === 0)        { color='#e53e3e'; label='Very Poor';   emoji='😔'; }
+  else if (pct < 30)    { color='#dd6b20'; label='Poor';        emoji='😐'; }
+  else if (pct < 60)    { color='#d69e2e'; label='Good';        emoji='🙂'; }
+  else if (pct < 100)   { color='#38a169'; label='Very Good';   emoji='😊'; }
+  else                  { color='#6b46c1'; label='Exceptional'; emoji='🏆'; }
+  return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;">
+    <span style="color:${color};font-size:12px;">${emoji}</span>
+    <span style="color:${color};font-weight:600;">${label}</span>
+    <span style="display:inline-block;width:60px;height:5px;background:#e2e8f0;border-radius:3px;overflow:hidden;vertical-align:middle;">
+      <span style="display:block;height:100%;width:${pct}%;background:${color};border-radius:3px;"></span>
+    </span>
+    <span style="color:var(--gray);">${pct}%</span>
+  </span>`;
 }
 
 function confirm2(msg, cb) {
@@ -1345,16 +1343,15 @@ function renderAttList() {
           <div style="display:flex;align-items:center;gap:10px;">
             ${av}
             <div style="flex:1;min-width:0;">
-              <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${k.full_name}</div>
-              <div style="font-size:11px;color:var(--gray);">#${k.kid_no} · ${age(k.dob)}</div>
-            </div>
-            <button class="att-btn ${pr?'present':''}" onclick="toggleAtt('${k.id}')" ${dis}>
-              ${pr ? '✓ Present' : 'Mark'}
-            </button>
-            ${(role==='admin'||role==='superadmin') ? `<button class="btn btn-gray" style="padding:4px 8px;font-size:11px;" onclick="openKidAttHistory('${k.id}')">History</button>` : ''}
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${k.full_name}</div>
+            <div style="font-size:11px;color:var(--gray);display:flex;align-items:center;gap:8px;">#${k.kid_no} · ${age(k.dob)} &nbsp; ${perfBar(pct3)}</div>
           </div>
-          ${perfBar(pct3)}
-        </div>`;
+          <button class="att-btn ${pr?'present':''}" onclick="toggleAtt('${k.id}')" ${dis}>
+            ${pr ? '✓ Present' : 'Mark'}
+          </button>
+          ${(role==='admin'||role==='superadmin') ? `<button class="btn btn-gray" style="padding:4px 8px;font-size:11px;" onclick="openKidAttHistory('${k.id}')">History</button>` : ''}
+        </div>
+      </div>`;
       }).join('')
     : '<div style="padding:24px 0;text-align:center;color:var(--gray);">No kids match.</div>';
 }
