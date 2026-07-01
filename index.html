@@ -3412,9 +3412,9 @@ function _renderStockFinance() {
         <td><div style="font-weight:600;">${giftName}</div><div style="font-size:11px;color:var(--gray);">${e.gifts?.gift_categories?.name||''}</div></td>
         <td style="text-align:center;">${e.qty_bought}</td>
         <td style="text-align:center;"><span style="font-weight:700;color:${sc};">${e.qty_left}</span></td>
-        <td style="text-align:right;">${e.buy_price_per_unit ? '₹'+e.buy_price_per_unit.toLocaleString('en-IN') : '—'}</td>
-        <td style="text-align:right;">${e.transport_cost ? '₹'+e.transport_cost.toLocaleString('en-IN') : '—'}</td>
-        <td style="text-align:right;font-weight:700;">${totalCost ? '₹'+totalCost.toLocaleString('en-IN') : '—'}</td>
+        <td style="text-align:right;">${e.buy_price_per_unit ? '₹'+e.buy_price_per_unit.toLocaleString('en-IN') : '0'}</td>
+        <td style="text-align:right;">${e.transport_cost ? '₹'+e.transport_cost.toLocaleString('en-IN') : '0'}</td>
+        <td style="text-align:right;font-weight:700;">${totalCost ? '₹'+totalCost.toLocaleString('en-IN') : '0'}</td>
         <td style="white-space:nowrap;">${fmtDate(e.purchase_date)}</td>
         <td><div style="display:flex;gap:4px;">
           ${role!=='volunteer'?`<button class="btn btn-gray" style="padding:3px 8px;font-size:11px;" onclick="openStockEntryModal('${e.id}')">Edit</button>`:''}
