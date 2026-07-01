@@ -455,7 +455,7 @@ select.fi{cursor:pointer;}
         <div class="card" style="padding:0;overflow:visible;">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:14px 16px 10px;">
             <div class="card-title" style="margin:0;">Gift stock purchases</div>
-            <button class="btn btn-green" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openStockEntryModal()">+ Add purchase</button>
+            <button class="btn btn-green" id="addStockBtn" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openStockEntryModal()">+ Add purchase</button>
           </div>
           <div class="scroll-hint">⟷ Swipe table left/right to see all columns</div>
           <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
@@ -472,7 +472,7 @@ select.fi{cursor:pointer;}
         <div class="card" style="padding:0;overflow:visible;">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:14px 16px 10px;">
             <div class="card-title" style="margin:0;">Other expenses</div>
-            <button class="btn btn-green" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openMiscExpModal()">+ Add expense</button>
+            <button class="btn btn-green" id="addMiscBtn" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openMiscExpModal()">+ Add expense</button>
           </div>
           <div id="miscExpList" style="padding:0 0 8px;"></div>
         </div>
@@ -564,7 +564,16 @@ select.fi{cursor:pointer;}
       <div class="fg"><label class="fl">WhatsApp / Parent mobile *</label><input class="fi" type="tel" id="kMobile" maxlength="10" placeholder="9876543210" oninput="autoFillPassword()"/></div>
       <div class="fg"><label class="fl">Password (auto-generated)</label><input class="fi" type="text" id="kPass" placeholder="auto"/></div>
     </div>
-    <div class="fg"><label class="fl">Photo (optional)</label><input class="fi" type="file" id="kPhoto" accept="image/*"/></div>
+    <div class="fg"><label class="fl">Photo (optional)</label>
+    <div style="display:flex;gap:8px;">
+      <label class="btn btn-gray" style="margin:0;cursor:pointer;font-size:13px;">
+        🖼 Gallery<input type="file" id="kPhoto" accept="image/*" style="display:none;"/>
+      </label>
+      <label class="btn btn-gray" style="margin:0;cursor:pointer;font-size:13px;">
+        📷 Camera<input type="file" id="kPhotoCamera" accept="image/*" capture="environment" style="display:none;" onchange="syncCameraToGallery()"/>
+      </label>
+    </div>
+  </div>
     <div id="kidModalErr" class="alert alert-red"></div>
   </div>
   <div class="modal-foot">
@@ -1366,7 +1375,7 @@ function renderKidList() {
             <div style="display:flex;gap:4px;">
               <button class="btn btn-gray" style="padding:4px 10px;font-size:12px;" onclick="openKidModal('${k.id}')">Edit</button>
               <button class="btn btn-gray" style="padding:4px 10px;font-size:12px;" onclick="uploadKidPhoto('${k.id}')">📷</button>
-              <button class="btn btn-red" style="padding:4px 10px;font-size:12px;" onclick="deleteKid('${k.id}')">Del</button>
+              ${role!=='volunteer'?`<button class="btn btn-red" style="padding:4px 10px;font-size:12px;" onclick="deleteKid('${k.id}')">Del</button>`:''}
             </div>
           </td>
         </tr>`;
@@ -1400,6 +1409,7 @@ function clearKidSelection() {
 }
 
 async function deleteSelectedKids() {
+  if (role === 'volunteer') { toast('Only admin can delete kids'); return; }
   const ids = [...document.querySelectorAll('.kid-chk:checked')].map(c => c.dataset.id);
   if (!ids.length) return;
   confirm2(`Delete ${ids.length} kid${ids.length > 1 ? 's' : ''}? This cannot be undone.`, async () => {
@@ -1543,6 +1553,7 @@ async function saveKid() {
 }
 
 async function deleteKid(id) {
+  if (role === 'volunteer') { toast('Only admin can delete kids'); return; }
   const k = kids.find(x => x.id === id);
   confirm2(`Delete ${k?.full_name}? This cannot be undone.`, async () => {
     const { error } = await sb.from('kids').delete().eq('id', id);
@@ -1552,24 +1563,47 @@ async function deleteKid(id) {
     toast('Kid deleted');
   });
 }
-
+function syncCameraToGallery() {
+  const cam = $('kPhotoCamera');
+  const gal = $('kPhoto');
+  if (!cam.files[0]) return;
+  const dt = new DataTransfer();
+  dt.items.add(cam.files[0]);
+  gal.files = dt.files;
+}
 function uploadKidPhoto(id) {
-  const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = 'image/*';
-  inp.onchange = async () => {
-    const file = inp.files[0]; if (!file) return;
-    const blob = await compressImage(file).catch(() => file);
-    const path = `${myLocation.id}/${id}.jpg`;
-    const { data: up, error } = await sb.storage.from('kid-photos').upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
-    if (error) { toast('Upload failed: ' + error.message); return; }
-    const { data: ul } = sb.storage.from('kid-photos').getPublicUrl(path);
+  // Show choice: gallery or camera
+  const choice = document.createElement('div');
+  choice.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-end;';
+  choice.innerHTML = `
+    <div style="background:#fff;width:100%;border-radius:16px 16px 0 0;padding:20px;display:flex;gap:12px;justify-content:center;">
+      <label class="btn btn-gray" style="font-size:14px;padding:12px 24px;cursor:pointer;">
+        🖼 Gallery<input type="file" accept="image/*" style="display:none;" onchange="handleKidPhotoUpload(this,'${id}')"/>
+      </label>
+      <label class="btn btn-gray" style="font-size:14px;padding:12px 24px;cursor:pointer;">
+        📷 Camera<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handleKidPhotoUpload(this,'${id}')"/>
+      </label>
+      <button class="btn btn-gray" style="font-size:14px;padding:12px 24px;" onclick="this.closest('div').parentElement.remove()">Cancel</button>
+    </div>`;
+  document.body.appendChild(choice);
+  choice.addEventListener('click', e => { if(e.target===choice) choice.remove(); });
+}
+
+async function handleKidPhotoUpload(inp, id) {
+  inp.closest('div').parentElement.parentElement.remove();
+  const file = inp.files[0]; if (!file) return;
+  const blob = await compressImage(file).catch(() => file);
+  const path = `${myLocation.id}/${id}.jpg`;
+  const { data: up, error } = await sb.storage.from('kid-photos').upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
+  if (error) { toast('Upload failed: ' + error.message); return; }
+  const { data: ul } = sb.storage.from('kid-photos').getPublicUrl(path);
+  if (ul?.publicUrl) {
     await sb.from('kids').update({ photo_url: ul.publicUrl }).eq('id', id);
     const k = kids.find(x => x.id === id);
-    if (k) k.photo_url = ul.publicUrl;
+    if (k) k.photo_url = ul.publicUrl + '?t=' + Date.now();
     renderKidList();
-    toast('Photo uploaded');
-  };
-  inp.click();
+    toast('Photo updated');
+  }
 }
 
 // ═══════════════════════════════════════════════════
@@ -2455,6 +2489,12 @@ function renderDonorList() {
         <span style="font-size:11px;color:var(--gray);">${fmtDate(p.paid_date)}</span>
         ${recv ? `<span style="font-size:11px;color:var(--gray);">via ${recv.full_name}</span>` : ''}
         ${p.notes ? `<span style="font-size:11px;color:var(--gray);">· ${p.notes}</span>` : ''}
+        ${p.txn_ref ? `<span style="font-size:11px;color:var(--gray);">Ref: ${p.txn_ref}</span>` : ''}
+        ${role !== 'volunteer' ? `
+          <span style="margin-left:auto;display:flex;gap:4px;">
+            <button class="btn btn-gray" style="padding:2px 7px;font-size:11px;" onclick="editPayment('${p.id}','${d.id}')">Edit</button>
+            <button class="btn btn-red"  style="padding:2px 7px;font-size:11px;" onclick="deletePayment('${p.id}','${d.id}')">Del</button>
+          </span>` : ''}
       </div>`;
     }).join('');
 
@@ -2551,6 +2591,34 @@ function openDonorModal(id) {
   openModal('donorModal');
 }
 
+function editPayment(paymentId, donorId) {
+  // Reuse openPaymentModal but pre-fill with existing payment data
+  openPaymentModal(donorId);
+  // Find the payment and fill fields
+  const p = (donorPayments[donorId]||[]).find(x => x.id === paymentId);
+  if (!p) return;
+  $('payAmount').value  = p.amount      || '';
+  $('payMode').value    = p.payment_mode || 'cash';
+  $('payDate').value    = p.paid_date   || TODAY;
+  $('payNotes').value   = p.notes       || '';
+  if ($('payRef')) $('payRef').value = p.txn_ref || '';
+  if ($('payReceivedBy')) $('payReceivedBy').value = p.received_by || '';
+  togglePayRefField();
+  // Store payment id so savePayment knows to UPDATE not INSERT
+  $('payDonorId').dataset.editPaymentId = paymentId;
+  $('payModalTitle') && ($('payModalTitle').textContent = 'Edit payment');
+}
+
+async function deletePayment(paymentId, donorId) {
+  confirm2('Delete this payment record? This cannot be undone.', async () => {
+    const { error } = await sb.from('donor_payments').delete().eq('id', paymentId);
+    if (error) { toast('Error: ' + error.message); return; }
+    donorPayments[donorId] = (donorPayments[donorId]||[]).filter(p => p.id !== paymentId);
+    renderDonorList();
+    toast('Payment deleted');
+  });
+}
+  
 function onRefDropChange() {
   const sel = $('dRefDrop');
   const val = sel.value;
@@ -2777,7 +2845,8 @@ function openPaymentModal(donorId) {
 
 async function savePayment() {
   if (role === 'volunteer') { toast('Only admin can record donor payments'); return; }
-  const donorId  = $('payDonorId').value;
+  const donorId     = $('payDonorId').value;
+  const editPayId   = $('payDonorId').dataset.editPaymentId || '';
   const amount   = parseInt($('payAmount').value || 0);
   const mode     = $('payMode').value;
   const date     = $('payDate').value;
@@ -2802,7 +2871,21 @@ async function savePayment() {
   const btn = $('paySaveBtn');
   btn.innerHTML = '<span class="spin"></span>'; btn.disabled = true;
 
-  const { data: pd, error } = await sb.from('donor_payments').insert({
+  let error, pd;
+  if (editPayId) {
+    // UPDATE existing payment
+    ({ error } = await sb.from('donor_payments').update({
+      amount, payment_mode: mode, paid_date: date,
+      received_by: recvBy||null, notes: notes||null, txn_ref: txnRef||null,
+    }).eq('id', editPayId));
+    if (!error) {
+      const idx = (donorPayments[donorId]||[]).findIndex(p => p.id === editPayId);
+      if (idx >= 0) Object.assign(donorPayments[donorId][idx], { amount, payment_mode:mode, paid_date:date, received_by:recvBy||null, notes:notes||null, txn_ref:txnRef||null });
+    }
+    $('payDonorId').dataset.editPaymentId = '';
+  } else {
+    // INSERT new payment
+    ({ data: pd, error } = await sb.from('donor_payments').insert({
     donor_id    : donorId,
     amount,
     payment_mode: mode,
@@ -2810,7 +2893,8 @@ async function savePayment() {
     received_by : recvBy || null,
     notes       : notes  || null,
     txn_ref     : txnRef || null,
-  }).select().single();
+  }).select().single());
+  }
 
   if (error) { showErr('payModalErr', error.message); btn.innerHTML='Save payment'; btn.disabled=false; return; }
 
@@ -3246,6 +3330,9 @@ async function loadStockData() {
 
 async function renderStockFinance() {
   if (!activeStockFY) activeStockFY = currentFY();
+  const canManageStock = role !== 'volunteer';
+  if ($('addStockBtn')) $('addStockBtn').style.display = canManageStock ? '' : 'none';
+  if ($('addMiscBtn'))  $('addMiscBtn').style.display  = canManageStock ? '' : 'none';
   buildStockFYTabs();
   await loadStockData();
   _renderStockFinance();
@@ -3289,8 +3376,8 @@ function _renderStockFinance() {
         <td style="text-align:right;font-weight:700;">₹${totalCost.toLocaleString('en-IN')}</td>
         <td style="white-space:nowrap;">${fmtDate(e.purchase_date)}</td>
         <td><div style="display:flex;gap:4px;">
-          <button class="btn btn-gray" style="padding:3px 8px;font-size:11px;" onclick="openStockEntryModal('${e.id}')">Edit</button>
-          <button class="btn btn-red"  style="padding:3px 8px;font-size:11px;" onclick="deleteStockEntry('${e.id}')">Del</button>
+          ${role!=='volunteer'?`<button class="btn btn-gray" style="padding:3px 8px;font-size:11px;" onclick="openStockEntryModal('${e.id}')">Edit</button>`:''}
+          ${role!=='volunteer'?`<button class="btn btn-red"  style="padding:3px 8px;font-size:11px;" onclick="deleteStockEntry('${e.id}')">Del</button>`:''}
         </div></td>
       </tr>`;
     }).join('');
@@ -3312,8 +3399,8 @@ function _renderStockFinance() {
         </div>
         <div style="font-weight:700;font-size:14px;color:var(--red);flex-shrink:0;">₹${(e.amount||0).toLocaleString('en-IN')}</div>
         <div style="display:flex;gap:4px;flex-shrink:0;">
-          <button class="btn btn-gray" style="padding:3px 8px;font-size:11px;" onclick="openMiscExpModal('${e.id}')">Edit</button>
-          <button class="btn btn-red"  style="padding:3px 8px;font-size:11px;" onclick="deleteMiscExp('${e.id}')">Del</button>
+          ${role!=='volunteer'?`<button class="btn btn-gray" style="padding:3px 8px;font-size:11px;" onclick="openMiscExpModal('${e.id}')">Edit</button>`:''}
+          ${role!=='volunteer'?`<button class="btn btn-red"  style="padding:3px 8px;font-size:11px;" onclick="deleteMiscExp('${e.id}')">Del</button>`:''}
         </div>
       </div>`).join('');
   }
