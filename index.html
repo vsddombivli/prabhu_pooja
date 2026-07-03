@@ -1819,18 +1819,28 @@ async function importKids(input) {
     for (const row of rows) {
       const first  = String(row['First Name'] || row['first_name'] || '').trim();
       const last   = String(row['Last Name']  || row['last_name']  || '').trim();
-      const kidNo  = String(row['ID']  || row['kid_no'] || row['ID No'] || '').trim();
+      const kidNo  = String(row['ID No'] || row['ID'] || row['kid_no'] || '').trim();
       const dob    = row['DOB'] || row['dob'] || '';
       const mobile = String(row['Mobile'] || row['mobile'] || '').trim();
       const gender = String(row['Gender'] || row['gender'] || '').toLowerCase();
       const pass   = String(row['Password'] || row['password'] || ('VSD' + mobile.slice(-4)));
+      // QR code: blank string in excel = explicitly clear it; missing column = leave as-is
+      const qrRaw  = row.hasOwnProperty('QR Code') ? String(row['QR Code'] || '').trim() : undefined;
+      const qrCode = qrRaw === undefined ? undefined : (qrRaw || null);
       if (!first || !mobile) continue;
       const obj = {
-        location_id: myLocation.id, first_name: first, last_name: last,
-        kid_no: kidNo || String(count + 1).padStart(3,'0'),
-        dob: dob || null, gender: ['male','female','other'].includes(gender) ? gender : 'other',
-        mobile, password_plain: pass, unique_kid_ref: mobile + '-' + kidNo,
-        is_active: true, created_by: me.id
+        location_id   : myLocation.id,
+        first_name    : first,
+        last_name     : last,
+        kid_no        : kidNo || String(count + 1).padStart(3,'0'),
+        dob           : dob || null,
+        gender        : ['male','female','other'].includes(gender) ? gender : 'other',
+        mobile,
+        password_plain: pass,
+        unique_kid_ref: mobile + '-' + kidNo,
+        is_active     : true,
+        created_by    : me.id,
+        ...(qrCode !== undefined && { qr_code: qrCode }),
       };
       const { data: nd, error } = await sb.from('kids')
         .upsert(obj, { onConflict: 'kid_no,location_id' }).select().single();
@@ -1876,7 +1886,7 @@ async function importKids(input) {
 }
 
 function exportKids() {
-  const headers = { 'ID No':'', 'First Name':'', 'Last Name':'', 'DOB':'', 'Age':'', 'Gender':'', 'Mobile':'', 'Password':'', 'Points':'', 'Active':'' };
+  const headers = { 'ID No':'', 'First Name':'', 'Last Name':'', 'DOB':'', 'Age':'', 'Gender':'', 'Mobile':'', 'Password':'', 'QR Code':'', 'Points':'', 'Active':'' };
   const rows = kids.length
     ? kids.map(k => ({
         'ID No'      : k.kid_no,
@@ -1887,6 +1897,7 @@ function exportKids() {
         'Gender'     : k.gender,
         'Mobile'     : k.mobile,
         'Password'   : k.password_plain,
+        'QR Code'    : k.qr_code || '',
         'Points'     : k.quarterly_points || 0,
         'Active'     : k.is_active ? 'Yes' : 'No',
       }))
