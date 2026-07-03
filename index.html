@@ -3048,10 +3048,10 @@ function togglePayRefField() {
   const label = $('payRefLabel');
   if (mode === 'online') {
     wrap.style.display = 'block';
-    label.textContent = 'UTR / Transaction ID';
+    label.textContent = 'UTR / Transaction ID *';
   } else if (mode === 'cheque') {
     wrap.style.display = 'block';
-    label.textContent = 'Cheque number';
+    label.textContent = 'Cheque number *';
   } else {
     wrap.style.display = 'none';
   }
