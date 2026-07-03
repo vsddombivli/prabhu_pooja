@@ -1990,6 +1990,7 @@ async function saveKid() {
     unique_kid_ref : mobile + '-' + kidNo,
     is_active      : true,
     created_by     : me.id,
+    ...(qrCode !== undefined && { qr_code: qrCode }),
     ...(photo_url && { photo_url }),
   };
 
