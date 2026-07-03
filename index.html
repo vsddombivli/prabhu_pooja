@@ -3147,13 +3147,15 @@ async function savePayment() {
 
   if (error) { showErr('payModalErr', error.message); btn.innerHTML='Save payment'; btn.disabled=false; return; }
 
-  if (!donorPayments[donorId]) donorPayments[donorId] = [];
-  donorPayments[donorId].push(pd);
+  if (pd) {
+      if (!donorPayments[donorId]) donorPayments[donorId] = [];
+      donorPayments[donorId].push(pd);
+  }
 
   // Update paid_status on donor
   const d = donors.find(x => x.id === donorId);
   if (d) {
-    const totalPaid = donorPayments[donorId].reduce((s,p) => s+(p.amount||0), 0);
+    const totalPaid = (donorPayments[donorId]||[]).filter(p => p && p.amount != null).reduce((s,p) => s+(p.amount||0), 0);
     const status = totalPaid >= d.amount ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid';
     await sb.from('donors').update({ paid_status: status }).eq('id', donorId);
     d.paid_status = status;
