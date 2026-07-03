@@ -3104,7 +3104,12 @@ async function savePayment() {
   // Block overpayment beyond remaining balance
   const donorObj = donors.find(x => x.id === donorId);
   if (donorObj) {
-    const alreadyPaid = (donorPayments[donorId]||[]).reduce((s,p) => s+(p.amount||0), 0);
+    // When editing, exclude the current payment's own amount from alreadyPaid
+    // so we check against the true remaining balance excluding this payment
+    const currentPayAmt = editPayId
+      ? ((donorPayments[donorId]||[]).find(p => p.id === editPayId)?.amount || 0)
+      : 0;
+    const alreadyPaid = (donorPayments[donorId]||[]).reduce((s,p) => s+(p.amount||0), 0) - currentPayAmt;
     const remaining   = (donorObj.amount||0) - alreadyPaid;
     if (amount > remaining) {
       showErr('payModalErr', `Amount exceeds remaining balance of ₹${remaining.toLocaleString('en-IN')}. Enter ₹${remaining.toLocaleString('en-IN')} or less.`);
