@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:system-ui,sans-serif;background:#f5f5f5;color:#1a1a1a;font-size:14px;overflow-x:hidden;width:100%;}
@@ -314,11 +315,77 @@ select.fi{cursor:pointer;}
 
     <!-- ── DASHBOARD ── -->
     <div id="screen-dashboard" class="screen active">
+
+      <!-- Row 1: KPI metrics -->
       <div class="metrics" id="dashMetrics"></div>
-      <div class="card">
-        <div class="card-title">Today's check-ins</div>
-        <div id="dashRecent"><div style="color:var(--gray);font-size:13px;">No attendance marked today.</div></div>
+
+      <!-- Row 2: Attendance trend + Performance donut -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="card" style="padding:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Monthly attendance trend</div>
+          <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
+            <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:2px;background:#2a78d6;display:inline-block;"></span>Sessions</span>
+            <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:2px;background:#e1e0d9;display:inline-block;"></span>Absent</span>
+          </div>
+          <div style="position:relative;height:160px;"><canvas id="dashTrendChart" role="img" aria-label="Monthly attendance trend">Monthly sessions and absent kids.</canvas></div>
+        </div>
+        <div class="card" style="padding:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Performance distribution</div>
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:50%;background:#4a3aa7;display:inline-block;"></span>Exceptional</span>
+            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:50%;background:#1baf7a;display:inline-block;"></span>Very good</span>
+            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:50%;background:#eda100;display:inline-block;"></span>Good</span>
+            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:50%;background:#e34948;display:inline-block;"></span>Poor</span>
+          </div>
+          <div style="position:relative;height:160px;"><canvas id="dashPerfChart" role="img" aria-label="Performance distribution donut">Kids by attendance band.</canvas></div>
+        </div>
       </div>
+
+      <!-- Row 3: Age group + Gender ratio + Streak leaderboard -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="card" style="padding:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Age groups</div>
+          <div style="position:relative;height:140px;"><canvas id="dashAgeChart" role="img" aria-label="Age group breakdown pie chart">Kids by age group.</canvas></div>
+        </div>
+        <div class="card" style="padding:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Gender ratio</div>
+          <div style="position:relative;height:140px;"><canvas id="dashGenderChart" role="img" aria-label="Gender ratio donut">Kids by gender.</canvas></div>
+        </div>
+        <div class="card" style="padding:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">🔥 Streak leaders</div>
+          <div id="dashStreakList" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+      </div>
+
+      <!-- Row 4: Gift stock + Quarterly comparison -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="card" style="padding:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Gift stock remaining</div>
+          <div id="dashStockWrap" style="position:relative;height:160px;"><canvas id="dashStockChart" role="img" aria-label="Gift stock bought vs remaining">Stock per gift type.</canvas></div>
+          <div id="dashStockEmpty" style="display:none;color:var(--gray);font-size:13px;padding:20px 0;text-align:center;">No gift stock entries yet.</div>
+        </div>
+        <div class="card" style="padding:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Quarter comparison</div>
+          <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:2px;background:#2a78d6;display:inline-block;"></span>This quarter</span>
+            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:2px;background:#b5d4f4;display:inline-block;"></span>Last quarter</span>
+          </div>
+          <div style="position:relative;height:160px;"><canvas id="dashQtrChart" role="img" aria-label="Quarter comparison bar chart">This vs last quarter per month.</canvas></div>
+        </div>
+      </div>
+
+      <!-- Row 5: Income vs Expense (admin only) -->
+      <div id="dashFinanceRow" style="display:none;margin-bottom:12px;">
+        <div class="card" style="padding:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Income vs expenses — this FY vs last FY (admin only)</div>
+          <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
+            <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:2px;background:#1baf7a;display:inline-block;"></span>Income</span>
+            <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:2px;background:#e34948;display:inline-block;"></span>Expenses</span>
+          </div>
+          <div style="position:relative;height:180px;"><canvas id="dashFinChart" role="img" aria-label="Income vs expenses this FY and last FY">Financial comparison across two fiscal years.</canvas></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ── ATTENDANCE ── -->
@@ -484,6 +551,53 @@ select.fi{cursor:pointer;}
           <div id="miscExpList" style="padding:0 0 8px;"></div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- ── REPORTS (admin only) ── -->
+    <div id="screen-reports" class="screen">
+      <div class="card">
+        <div class="card-title">📋 Attendance report</div>
+        <div style="font-size:13px;color:var(--gray);margin-bottom:12px;">
+          Select date range — only event days within range will appear as columns. Each row = one kid.
+        </div>
+        <div class="fi-2" style="margin-bottom:10px;">
+          <div class="fg"><label class="fl">From date</label><input class="fi" type="date" id="rptAttFrom"/></div>
+          <div class="fg"><label class="fl">To date</label><input class="fi" type="date" id="rptAttTo"/></div>
+        </div>
+        <button class="btn btn-green" onclick="exportAttReport()">⬇ Download attendance Excel</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">💰 Donor & payment report</div>
+        <div style="font-size:13px;color:var(--gray);margin-bottom:12px;">
+          Year-wise donor list with all payment details. Year starts from month set in location settings.
+        </div>
+        <div class="fg" style="margin-bottom:10px;">
+          <label class="fl">Fiscal year</label>
+          <select class="fi" id="rptDonorFY" style="max-width:200px;"></select>
+        </div>
+        <button class="btn btn-green" onclick="exportDonorReport()">⬇ Download donor Excel</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📦 Financial & stock report</div>
+        <div style="font-size:13px;color:var(--gray);margin-bottom:12px;">
+          Year-wise income vs expenses breakdown. Year starts from month set in location settings.
+        </div>
+        <div class="fg" style="margin-bottom:10px;">
+          <label class="fl">Fiscal year</label>
+          <select class="fi" id="rptFinFY" style="max-width:200px;"></select>
+        </div>
+        <button class="btn btn-green" onclick="exportFinReport()">⬇ Download financial Excel</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🎁 Gift brochure PDF</div>
+        <div style="font-size:13px;color:var(--gray);margin-bottom:12px;">
+          PDF with all gifts — photo, name, MRP, vendor. Vendor directory appended at end.
+        </div>
+        <button class="btn btn-green" onclick="exportGiftBrochure()">⬇ Download gift brochure PDF</button>
       </div>
     </div>
 
@@ -1211,6 +1325,7 @@ function buildNav() {
         ...(isAdmin ? [['vendors','Vendors']] : []),
         ...(isAdmin ? [['donors','Donors']] : []),
         ['stock', role === 'volunteer' ? '📦 Stock' : '📦 Stock & Finance'],
+        ...(isAdmin ? [['reports','📊 Reports']] : []),
         ...(isSuperAdmin ? [['locations','Locations']] : []),
         ...(isAdmin ? [['settings','Settings']] : []),
       ];
@@ -1259,6 +1374,7 @@ function goTo(id) {
   if (id === 'gifts')      renderGiftGallery();
   if (id === 'vendors')    renderVendorList();
   if (id === 'stock')      renderStockFinance();
+  if (id === 'reports')    renderReports();
 }
 
 // ═══════════════════════════════════════════════════
@@ -1288,32 +1404,306 @@ async function loadAll() {
 // ═══════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════
-function renderDashboard() {
+// Track Chart.js instances so we can destroy before re-render
+const dashCharts = {};
+
+function destroyDashChart(id) {
+  if (dashCharts[id]) { dashCharts[id].destroy(); delete dashCharts[id]; }
+}
+
+async function renderDashboard() {
   const active = kids.filter(k => k.is_active);
-  const present = active.filter(k => attendance[k.id]);
-  const pct = active.length ? Math.round(present.length / active.length * 100) : 0;
-  const totalPts = active.reduce((a, k) => a + (k.quarterly_points || 0), 0);
+  const now    = new Date();
+  const y      = now.getFullYear();
+  const m      = now.getMonth(); // 0-indexed
 
+  // ── Periods ──────────────────────────────────────
+  const curMonthStart = new Date(y, m, 1).toISOString().split('T')[0];
+  const curMonthEnd   = new Date(y, m + 1, 0).toISOString().split('T')[0];
+  const curQ          = Math.floor(m / 3);
+  const curQStart     = new Date(y, curQ * 3, 1).toISOString().split('T')[0];
+  const curQEnd       = new Date(y, curQ * 3 + 3, 0).toISOString().split('T')[0];
+  const lqY           = curQ === 0 ? y - 1 : y;
+  const lqQ           = curQ === 0 ? 3 : curQ - 1;
+  const lqStart       = new Date(lqY, lqQ * 3, 1).toISOString().split('T')[0];
+  const lqEnd         = new Date(lqY, lqQ * 3 + 3, 0).toISOString().split('T')[0];
+
+  function countInRange(kidId, from, to) {
+    return (allKidAtt[kidId] || []).filter(a => a.event_date >= from && a.event_date <= to).length;
+  }
+  function totalSessions(from, to) {
+    return active.reduce((s, k) => s + countInRange(k.id, from, to), 0);
+  }
+  function kidsWithAtt(from, to)  { return active.filter(k => countInRange(k.id, from, to) > 0).length; }
+  function kidsZeroAtt(from, to)  { return active.filter(k => countInRange(k.id, from, to) === 0).length; }
+
+  // ── KPI Metrics ──────────────────────────────────
   $('dashMetrics').innerHTML = `
-    <div class="metric"><div class="metric-val green">${present.length}</div><div class="metric-lbl">Present today</div></div>
-    <div class="metric"><div class="metric-val">${active.length}</div><div class="metric-lbl">Total kids</div></div>
-    <div class="metric"><div class="metric-val blue">${pct}%</div><div class="metric-lbl">Attendance %</div></div>
-    <div class="metric"><div class="metric-val" style="color:var(--amber);">${totalPts}</div><div class="metric-lbl">Total points</div></div>`;
+    <div class="metric"><div class="metric-val blue">${active.length}</div><div class="metric-lbl">Total active kids</div></div>
+    <div class="metric"><div class="metric-val green">${kidsWithAtt(curMonthStart, curMonthEnd)}</div><div class="metric-lbl">Attended this month</div></div>
+    <div class="metric"><div class="metric-val" style="color:var(--amber);">${totalSessions(curQStart, curQEnd)}</div><div class="metric-lbl">Sessions this quarter</div></div>
+    <div class="metric"><div class="metric-val red">${kidsZeroAtt(curMonthStart, curMonthEnd)}</div><div class="metric-lbl">0 attendance this month</div></div>`;
 
-  const recent = active.filter(k => attendance[k.id])
-    .sort((a,b) => (attendance[b.id]?.marked_at||'').localeCompare(attendance[a.id]?.marked_at||''))
-    .slice(0, 10);
+  // ── Monthly trend (last 6 months) ────────────────
+  const months6 = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(y, m - i, 1);
+    const mStart = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+    const mEnd   = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0];
+    const sessions = totalSessions(mStart, mEnd);
+    const absent   = active.length - kidsWithAtt(mStart, mEnd);
+    months6.push({
+      label: d.toLocaleString('en-IN', { month: 'short' }),
+      sessions, absent
+    });
+  }
+  destroyDashChart('trend');
+  if ($('dashTrendChart')) dashCharts.trend = new Chart($('dashTrendChart'), {
+    type: 'bar',
+    data: {
+      labels: months6.map(x => x.label),
+      datasets: [
+        { label:'Sessions', data: months6.map(x => x.sessions), backgroundColor:'#2a78d6', borderRadius:4, barPercentage:0.65 },
+        { label:'Absent',   data: months6.map(x => x.absent),   backgroundColor:'#e1e0d9', borderRadius:4, barPercentage:0.65 }
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ grid:{ display:false }, ticks:{ color:'#898781', font:{ size:10 } } },
+        y:{ grid:{ color:'#e1e0d9' }, ticks:{ color:'#898781', font:{ size:10 } }, border:{ display:false } }
+      }
+    }
+  });
 
-  $('dashRecent').innerHTML = recent.length
-    ? recent.map(k => {
+  // ── Performance distribution ──────────────────────
+  function perfPct(kidId) {
+    const days = lastNEventDays(8);
+    const present = days.filter(d => (allKidAtt[kidId]||[]).some(a => a.event_date === d)).length;
+    return days.length ? Math.round(present / days.length * 100) : 0;
+  }
+  const perf = { exceptional:0, verygood:0, good:0, poor:0 };
+  active.forEach(k => {
+    const p = perfPct(k.id);
+    if (p === 100)      perf.exceptional++;
+    else if (p >= 60)   perf.verygood++;
+    else if (p >= 30)   perf.good++;
+    else                perf.poor++;
+  });
+  destroyDashChart('perf');
+  if ($('dashPerfChart')) dashCharts.perf = new Chart($('dashPerfChart'), {
+    type: 'doughnut',
+    data: {
+      labels:['Exceptional (100%)','Very good (60–99%)','Good (30–59%)','Poor (<30%)'],
+      datasets:[{ data:[perf.exceptional, perf.verygood, perf.good, perf.poor],
+        backgroundColor:['#4a3aa7','#1baf7a','#eda100','#e34948'], borderWidth:2, borderColor:'#fff' }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${ctx.parsed} kids` } } },
+      cutout:'60%' }
+  });
+
+  // ── Age groups ────────────────────────────────────
+  const ageGroups = { '5–8':0, '9–12':0, '13–16':0, '17+':0 };
+  active.forEach(k => {
+    if (!k.dob) return;
+    const a = parseInt(age(k.dob));
+    if (a <= 8)       ageGroups['5–8']++;
+    else if (a <= 12) ageGroups['9–12']++;
+    else if (a <= 16) ageGroups['13–16']++;
+    else              ageGroups['17+']++;
+  });
+  destroyDashChart('age');
+  if ($('dashAgeChart')) dashCharts.age = new Chart($('dashAgeChart'), {
+    type: 'pie',
+    data: {
+      labels: Object.keys(ageGroups),
+      datasets:[{ data: Object.values(ageGroups),
+        backgroundColor:['#2a78d6','#1baf7a','#eda100','#4a3aa7'], borderWidth:2, borderColor:'#fff' }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:true, position:'right',
+        labels:{ font:{ size:10 }, color:'#52514e', boxWidth:10, padding:8 } } } }
+  });
+
+  // ── Gender ratio ──────────────────────────────────
+  const gender = { Male:0, Female:0, Other:0 };
+  active.forEach(k => {
+    const g = (k.gender || 'other').toLowerCase();
+    if (g === 'male')        gender.Male++;
+    else if (g === 'female') gender.Female++;
+    else                     gender.Other++;
+  });
+  if (gender.Other === 0) delete gender.Other;
+  destroyDashChart('gender');
+  if ($('dashGenderChart')) dashCharts.gender = new Chart($('dashGenderChart'), {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(gender),
+      datasets:[{ data: Object.values(gender),
+        backgroundColor:['#2a78d6','#e87ba4','#73726c'], borderWidth:2, borderColor:'#fff' }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'55%',
+      plugins:{ legend:{ display:true, position:'right',
+        labels:{ font:{ size:10 }, color:'#52514e', boxWidth:10, padding:8 } } } }
+  });
+
+  // ── Streak leaderboard ────────────────────────────
+  const eventDaysList = lastNEventDays(12);
+  const streakKids = active.map(k => {
+    const attSet = new Set((allKidAtt[k.id]||[]).map(a => a.event_date));
+    let streak = 0;
+    for (let i = eventDaysList.length - 1; i >= 0; i--) {
+      if (attSet.has(eventDaysList[i])) streak++;
+      else break;
+    }
+    return { ...k, streak };
+  }).filter(k => k.streak > 0).sort((a,b) => b.streak - a.streak).slice(0, 5);
+
+  const streakColors = ['#4a3aa7','#2a78d6','#1baf7a','#eda100','#73726c'];
+  $('dashStreakList').innerHTML = streakKids.length
+    ? streakKids.map((k, i) => {
         const c = avColor(k.full_name);
-        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
-          <div class="av" style="background:${c.bg};color:${c.fg};">${ini(k.full_name)}</div>
-          <div style="flex:1;"><div style="font-weight:600;">${k.full_name}</div><div style="font-size:11px;color:var(--gray);">#${k.kid_no}</div></div>
-          <span class="tag tag-green">✓ Present</span>
+        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+        return `<div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:13px;min-width:20px;">${medal}</span>
+          <div class="av" style="width:24px;height:24px;font-size:9px;background:${c.bg};color:${c.fg};">${ini(k.full_name)}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${k.full_name}</div>
+          </div>
+          <span style="font-size:11px;font-weight:700;color:${streakColors[i]||'#73726c'};">${k.streak} 🔥</span>
         </div>`;
       }).join('')
-    : '<div style="color:var(--gray);font-size:13px;">No attendance marked today.</div>';
+    : '<div style="color:var(--gray);font-size:12px;">No streak data yet.</div>';
+
+  // ── Gift stock chart ──────────────────────────────
+  destroyDashChart('stock');
+  if (stockEntries.length) {
+    if ($('dashStockWrap')) $('dashStockWrap').style.display = 'block';
+    if ($('dashStockEmpty')) $('dashStockEmpty').style.display = 'none';
+    // Aggregate by gift name
+    const stockMap = {};
+    stockEntries.forEach(e => {
+      const name = e.gifts?.name || 'Unknown';
+      if (!stockMap[name]) stockMap[name] = { bought:0, left:0 };
+      stockMap[name].bought += (e.qty_bought || 0);
+      stockMap[name].left   += (e.qty_left   || 0);
+    });
+    const stockLabels = Object.keys(stockMap).slice(0, 6);
+    if ($('dashStockChart')) dashCharts.stock = new Chart($('dashStockChart'), {
+      type: 'bar',
+      data: {
+        labels: stockLabels,
+        datasets:[
+          { label:'Bought', data: stockLabels.map(n => stockMap[n].bought), backgroundColor:'#b5d4f4', borderRadius:4, barPercentage:0.7 },
+          { label:'Left',   data: stockLabels.map(n => stockMap[n].left),   backgroundColor:'#2a78d6', borderRadius:4, barPercentage:0.7 }
+        ]
+      },
+      options:{
+        indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ display:false } },
+        scales:{
+          x:{ grid:{ color:'#e1e0d9' }, ticks:{ color:'#898781', font:{ size:10 } }, border:{ display:false } },
+          y:{ grid:{ display:false }, ticks:{ color:'#898781', font:{ size:10 } } }
+        }
+      }
+    });
+  } else {
+    if ($('dashStockWrap')) $('dashStockWrap').style.display = 'none';
+    if ($('dashStockEmpty')) $('dashStockEmpty').style.display = 'block';
+  }
+
+  // ── Quarter comparison ────────────────────────────
+  // Compare month-by-month within current quarter vs last quarter
+  const qMonthsThis = [], qMonthsLast = [];
+  for (let i = 0; i < 3; i++) {
+    const tStart = new Date(y, curQ * 3 + i, 1).toISOString().split('T')[0];
+    const tEnd   = new Date(y, curQ * 3 + i + 1, 0).toISOString().split('T')[0];
+    const lStart = new Date(lqY, lqQ * 3 + i, 1).toISOString().split('T')[0];
+    const lEnd   = new Date(lqY, lqQ * 3 + i + 1, 0).toISOString().split('T')[0];
+    qMonthsThis.push({
+      label: new Date(y, curQ * 3 + i, 1).toLocaleString('en-IN', { month: 'short' }),
+      val: totalSessions(tStart, tEnd)
+    });
+    qMonthsLast.push({ val: totalSessions(lStart, lEnd) });
+  }
+  destroyDashChart('qtr');
+  if ($('dashQtrChart')) dashCharts.qtr = new Chart($('dashQtrChart'), {
+    type: 'bar',
+    data: {
+      labels: qMonthsThis.map(x => x.label),
+      datasets:[
+        { label:'This quarter', data: qMonthsThis.map(x => x.val), backgroundColor:'#2a78d6', borderRadius:4, barPercentage:0.6 },
+        { label:'Last quarter', data: qMonthsLast.map(x => x.val), backgroundColor:'#b5d4f4', borderRadius:4, barPercentage:0.6 }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ grid:{ display:false }, ticks:{ color:'#898781', font:{ size:10 } } },
+        y:{ grid:{ color:'#e1e0d9' }, ticks:{ color:'#898781', font:{ size:10 } }, border:{ display:false } }
+      }
+    }
+  });
+
+  // ── Finance: Income vs Expense this FY vs last FY (admin only) ───
+  const finRow = $('dashFinanceRow');
+  if (finRow) finRow.style.display = (role === 'admin' || role === 'superadmin') ? 'block' : 'none';
+
+  if ((role === 'admin' || role === 'superadmin') && sb && myLocation) {
+    const curFY  = currentFY();
+    const fys    = fyOptions();
+    const prevFY = fys[fys.indexOf(curFY) - 1] || (parseInt(curFY) - 1 + '-' + String(parseInt(curFY)).slice(-2));
+
+    // Fetch income for both FYs
+    async function fyIncome(fy) {
+      const { data } = await sb.from('donor_payments')
+        .select('amount, donors!inner(location_id, fiscal_year)')
+        .eq('donors.location_id', myLocation.id)
+        .eq('donors.fiscal_year', fy);
+      return (data || []).reduce((s, p) => s + (p.amount || 0), 0);
+    }
+    async function fyExpense(fy) {
+      const [{ data: se }, { data: me }] = await Promise.all([
+        sb.from('gift_stock_entries').select('qty_bought,buy_price_per_unit,transport_cost')
+          .eq('location_id', myLocation.id).eq('fiscal_year', fy),
+        sb.from('misc_expenses').select('amount')
+          .eq('location_id', myLocation.id).eq('fiscal_year', fy)
+      ]);
+      const stockC = (se || []).reduce((s,e) => s + (e.qty_bought*(e.buy_price_per_unit||0)) + (e.transport_cost||0), 0);
+      const miscC  = (me || []).reduce((s,e) => s + (e.amount||0), 0);
+      return stockC + miscC;
+    }
+
+    const [curInc, prevInc, curExp, prevExp] = await Promise.all([
+      fyIncome(curFY), fyIncome(prevFY), fyExpense(curFY), fyExpense(prevFY)
+    ]);
+
+    destroyDashChart('fin');
+    if ($('dashFinChart')) dashCharts.fin = new Chart($('dashFinChart'), {
+      type: 'bar',
+      data: {
+        labels: [prevFY, curFY],
+        datasets:[
+          { label:'Income',   data:[prevInc, curInc], backgroundColor:'#1baf7a', borderRadius:4, barPercentage:0.5 },
+          { label:'Expenses', data:[prevExp, curExp], backgroundColor:'#e34948', borderRadius:4, barPercentage:0.5 }
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ display:false },
+          tooltip:{ callbacks:{ label: ctx => ` ${ctx.dataset.label}: ₹${ctx.parsed.y.toLocaleString('en-IN')}` } } },
+        scales:{
+          x:{ grid:{ display:false }, ticks:{ color:'#898781', font:{ size:11 } } },
+          y:{ grid:{ color:'#e1e0d9' }, ticks:{ color:'#898781', font:{ size:10 },
+              callback: v => '₹' + (v >= 100000 ? (v/100000).toFixed(1)+'L' : v >= 1000 ? (v/1000).toFixed(0)+'k' : v) },
+            border:{ display:false } }
+        }
+      }
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════
@@ -4056,6 +4446,307 @@ async function deleteMiscExp(id) {
   });
 }
 
+// ═══════════════════════════════════════════════════
+// REPORTS
+// ═══════════════════════════════════════════════════
+function renderReports() {
+  // Populate FY dropdowns
+  const fys = fyOptions();
+  ['rptDonorFY','rptFinFY'].forEach(id => {
+    const el = $(id); if (!el) return;
+    el.innerHTML = fys.map(fy => `<option value="${fy}" ${fy===activeFY?'selected':''}>${fy}</option>`).join('');
+  });
+  // Default date range: current month
+  const now = new Date();
+  if ($('rptAttFrom')) $('rptAttFrom').value = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  if ($('rptAttTo'))   $('rptAttTo').value   = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+}
+
+// ── Attendance report ─────────────────────────────
+async function exportAttReport() {
+  const from = $('rptAttFrom').value;
+  const to   = $('rptAttTo').value;
+  if (!from || !to) { toast('Select from and to dates'); return; }
+  if (from > to)    { toast('From date must be before to date'); return; }
+
+  toast('Loading attendance data…');
+
+  // Fetch all attendance in range for this location
+  const { data: attData, error } = await sb.from('attendance')
+    .select('kid_id, event_date')
+    .eq('location_id', myLocation.id)
+    .gte('event_date', from)
+    .lte('event_date', to)
+    .order('event_date');
+  if (error) { toast('Error: ' + error.message); return; }
+
+  // Get unique event days in range (sorted)
+  const eventDatesSet = new Set((attData || []).map(a => a.event_date));
+  const eventDates    = [...eventDatesSet].sort();
+  if (!eventDates.length) { toast('No attendance records in this date range'); return; }
+
+  // Build attendance map: kidId -> Set of dates
+  const attMap = {};
+  (attData || []).forEach(a => {
+    if (!attMap[a.kid_id]) attMap[a.kid_id] = new Set();
+    attMap[a.kid_id].add(a.event_date);
+  });
+
+  // Build rows
+  const activeKids = kids.filter(k => k.is_active);
+  const rows = activeKids.map(k => {
+    const row = {
+      'ID No'      : k.kid_no,
+      'First Name' : k.first_name,
+      'Last Name'  : k.last_name || '',
+      'Mobile'     : k.mobile,
+    };
+    let total = 0;
+    eventDates.forEach(d => {
+      const present = (attMap[k.id] || new Set()).has(d);
+      const label   = new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day:'2-digit', month:'short' });
+      row[label]    = present ? '✓' : '';
+      if (present) total++;
+    });
+    row['Total Present'] = total;
+    row['Total Days']    = eventDates.length;
+    row['Attendance %']  = eventDates.length ? Math.round(total / eventDates.length * 100) + '%' : '0%';
+    return row;
+  });
+
+  xlDown(rows, `Attendance_${from}_to_${to}`);
+  toast(`Exported ${activeKids.length} kids × ${eventDates.length} event days`);
+}
+
+// ── Donor report ──────────────────────────────────
+async function exportDonorReport() {
+  const fy = $('rptDonorFY').value;
+  if (!fy) { toast('Select fiscal year'); return; }
+  toast('Loading donor data…');
+
+  const { data: donorData, error } = await sb.from('donors')
+    .select('*, donor_payments(*)')
+    .eq('location_id', myLocation.id)
+    .eq('fiscal_year', fy)
+    .order('full_name');
+  if (error) { toast('Error: ' + error.message); return; }
+  if (!donorData?.length) { toast('No donors for ' + fy); return; }
+
+  const rows = [];
+  donorData.forEach(d => {
+    const payments = d.donor_payments || [];
+    const paid = payments.reduce((s, p) => s + (p.amount || 0), 0);
+    const base = {
+      'FY'            : d.fiscal_year,
+      'Donor name'    : d.full_name,
+      'Mobile'        : d.mobile,
+      'Reference'     : d.reference_by || '',
+      'Ref Mobile'    : d.ref_mobile   || '',
+      'Gift source'   : d.gift_source,
+      'No. of Sundays': d.num_sundays,
+      'Total amount'  : d.amount,
+      'Paid amount'   : paid,
+      'Balance'       : (d.amount || 0) - paid,
+      'Status'        : d.paid_status || (paid >= d.amount ? 'paid' : paid > 0 ? 'partial' : 'pending'),
+    };
+    if (payments.length === 0) {
+      rows.push({ ...base, 'Payment date':'', 'Payment mode':'', 'Transaction ref':'', 'Payment amount':'' });
+    } else {
+      payments.forEach(p => {
+        rows.push({
+          ...base,
+          'Payment date'    : fmtDate(p.paid_date),
+          'Payment mode'    : p.payment_mode,
+          'Transaction ref' : p.txn_ref || '',
+          'Payment amount'  : p.amount,
+        });
+      });
+    }
+  });
+
+  xlDown(rows, `Donors_${fy}`);
+  toast(`Exported ${donorData.length} donors`);
+}
+
+// ── Financial report ──────────────────────────────
+async function exportFinReport() {
+  const fy = $('rptFinFY').value;
+  if (!fy) { toast('Select fiscal year'); return; }
+  toast('Loading financial data…');
+
+  // Fetch stock entries
+  const { data: stockData } = await sb.from('gift_stock_entries')
+    .select('*, gifts(name, gift_categories(name))')
+    .eq('location_id', myLocation.id)
+    .eq('fiscal_year', fy)
+    .order('purchase_date');
+
+  // Fetch misc expenses
+  const { data: miscData } = await sb.from('misc_expenses')
+    .select('*')
+    .eq('location_id', myLocation.id)
+    .eq('fiscal_year', fy)
+    .order('expense_date');
+
+  // Fetch donor income
+  const { data: donorData } = await sb.from('donors')
+    .select('amount, donor_payments(amount)')
+    .eq('location_id', myLocation.id)
+    .eq('fiscal_year', fy);
+
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Gift stock purchases
+  const stockRows = (stockData || []).map(e => ({
+    'Gift'          : e.gifts?.name || '',
+    'Category'      : e.gifts?.gift_categories?.name || '',
+    'Qty bought'    : e.qty_bought,
+    'Qty left'      : e.qty_left,
+    'Buy price/unit': e.buy_price_per_unit,
+    'Transport cost': e.transport_cost || 0,
+    'Total cost'    : (e.qty_bought * e.buy_price_per_unit) + (e.transport_cost || 0),
+    'Purchase date' : fmtDate(e.purchase_date),
+  }));
+  if (stockRows.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stockRows), 'Gift Stock');
+  }
+
+  // Sheet 2: Misc expenses
+  const miscRows = (miscData || []).map(e => ({
+    'Description'   : e.description,
+    'Category'      : e.category,
+    'Amount'        : e.amount,
+    'Date'          : fmtDate(e.expense_date),
+  }));
+  if (miscRows.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(miscRows), 'Other Expenses');
+  }
+
+  // Sheet 3: Summary P&L
+  const stockCost  = (stockData || []).reduce((s, e) => s + (e.qty_bought * e.buy_price_per_unit) + (e.transport_cost || 0), 0);
+  const miscCost   = (miscData  || []).reduce((s, e) => s + (e.amount || 0), 0);
+  const donorIncome= (donorData || []).reduce((s, d) => s + (d.donor_payments || []).reduce((ps, p) => ps + (p.amount || 0), 0), 0);
+  const allAssigned= new Set();
+  (donorData || []).forEach(() => {}); // flower cost needs donorSundays — use simple calc
+  const flowerCost = allAssignedSundays?.size ? allAssignedSundays.size * (myLocation?.flower_cost || 300) : 0;
+  const totalExp   = stockCost + miscCost + flowerCost;
+  const summaryRows = [
+    { 'Category':'INCOME', 'Description':'Donor payments received', 'Amount':donorIncome },
+    { 'Category':'EXPENSE','Description':'Gift stock purchases',     'Amount':stockCost   },
+    { 'Category':'EXPENSE','Description':'Flower cost',              'Amount':flowerCost  },
+    { 'Category':'EXPENSE','Description':'Miscellaneous',            'Amount':miscCost    },
+    { 'Category':'EXPENSE','Description':'Total expenses',           'Amount':totalExp    },
+    { 'Category':'NET',    'Description':donorIncome >= totalExp ? 'SURPLUS' : 'DEFICIT',
+      'Amount': Math.abs(donorIncome - totalExp) },
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'P&L Summary');
+
+  XLSX.writeFile(wb, `Financial_Report_${fy}.xlsx`);
+  toast('Financial report exported');
+}
+
+// ── Gift brochure PDF ─────────────────────────────
+async function exportGiftBrochure() {
+  if (!gifts.length) { toast('No gifts in gallery'); return; }
+  toast('Generating brochure PDF…');
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageW = 210, pageH = 297;
+  const margin = 15;
+  let y = margin;
+
+  // Title
+  doc.setFontSize(18); doc.setFont(undefined, 'bold');
+  doc.text('Gift Brochure — ' + (myLocation?.name || ''), pageW / 2, y, { align: 'center' });
+  y += 8;
+  doc.setFontSize(10); doc.setFont(undefined, 'normal'); doc.setTextColor(120);
+  doc.text('Prabhu Pooja · ' + new Date().toLocaleDateString('en-IN'), pageW / 2, y, { align: 'center' });
+  y += 10;
+  doc.setTextColor(0);
+  doc.setDrawColor(200); doc.line(margin, y, pageW - margin, y);
+  y += 8;
+
+  for (const g of gifts) {
+    // Check space — each gift card ~50mm tall
+    if (y + 55 > pageH - margin) { doc.addPage(); y = margin; }
+
+    const catName    = g.gift_categories?.name || '';
+    const vendorName = g.vendors?.name         || '';
+    const mrp        = g.mrp ? '₹' + g.mrp.toLocaleString('en-IN') : '';
+
+    // Gift photo
+    if (g.photo_url) {
+      try {
+        const imgData = await fetchImageAsDataURL(g.photo_url);
+        doc.addImage(imgData, 'JPEG', margin, y, 35, 35);
+      } catch(e) {
+        doc.setDrawColor(200); doc.rect(margin, y, 35, 35);
+        doc.setFontSize(8); doc.setTextColor(150);
+        doc.text('No photo', margin + 17.5, y + 17.5, { align:'center' });
+        doc.setTextColor(0);
+      }
+    } else {
+      doc.setDrawColor(200); doc.rect(margin, y, 35, 35);
+    }
+
+    const tx = margin + 40;
+    doc.setFontSize(13); doc.setFont(undefined, 'bold');
+    doc.text(g.name || '', tx, y + 7);
+    doc.setFont(undefined, 'normal'); doc.setFontSize(10); doc.setTextColor(80);
+    if (catName)    { doc.text('Category: ' + catName, tx, y + 14); }
+    if (mrp)        { doc.setFontSize(12); doc.setTextColor(0); doc.setFont(undefined,'bold'); doc.text('MRP: ' + mrp, tx, y + 22); doc.setFont(undefined,'normal'); }
+    if (vendorName) { doc.setFontSize(10); doc.setTextColor(80); doc.text('Vendor: ' + vendorName, tx, y + 30); }
+    if (g.description) {
+      doc.setFontSize(9); doc.setTextColor(100);
+      const lines = doc.splitTextToSize(g.description, pageW - tx - margin);
+      doc.text(lines.slice(0,2), tx, y + 37);
+    }
+    doc.setTextColor(0);
+    y += 45;
+    doc.setDrawColor(230); doc.line(margin, y - 3, pageW - margin, y - 3);
+    y += 3;
+  }
+
+  // Vendor directory at end
+  const vendorList = [...new Map(gifts.filter(g => g.vendors).map(g => [g.vendor_id, g.vendors])).values()];
+  if (vendorList.length) {
+    doc.addPage(); y = margin;
+    doc.setFontSize(16); doc.setFont(undefined,'bold');
+    doc.text('Vendor Directory', pageW / 2, y, { align: 'center' });
+    y += 10;
+    doc.setDrawColor(200); doc.line(margin, y, pageW - margin, y); y += 8;
+
+    vendorList.forEach(v => {
+      if (y + 30 > pageH - margin) { doc.addPage(); y = margin; }
+      doc.setFontSize(12); doc.setFont(undefined,'bold'); doc.text(v.name || '', margin, y); y += 6;
+      doc.setFontSize(10); doc.setFont(undefined,'normal'); doc.setTextColor(60);
+      if (v.mobile)  { doc.text('📞 ' + v.mobile, margin + 3, y); y += 5; }
+      if (v.mobile2) { doc.text('📞 ' + v.mobile2, margin + 3, y); y += 5; }
+      if (v.address) {
+        const lines = doc.splitTextToSize('📍 ' + v.address, pageW - 2 * margin - 3);
+        doc.text(lines, margin + 3, y); y += lines.length * 5;
+      }
+      doc.setTextColor(0); y += 4;
+      doc.setDrawColor(230); doc.line(margin, y, pageW - margin, y); y += 6;
+    });
+  }
+
+  doc.save(`Gift_Brochure_${myLocation?.name || 'Gifts'}_${TODAY}.pdf`);
+  toast('Gift brochure downloaded');
+}
+
+// Helper: fetch image URL as base64 data URL for jsPDF
+async function fetchImageAsDataURL(url) {
+  const resp = await fetch(url);
+  const blob = await resp.blob();
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result);
+    reader.onerror = rej;
+    reader.readAsDataURL(blob);
+  });
+}
 </script>
 
 <!-- MODAL: Add/Edit Gift -->
