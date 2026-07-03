@@ -770,7 +770,11 @@ select.fi{cursor:pointer;}
           <option value="cheque">Cheque</option>
         </select>
       </div>
-      <div class="fg"><label class="fl">Date *</label><input class="fi" type="date" id="payDate"/></div>
+      <div class="fg"><label class="fl">Date *</label>
+        <input class="fi" type="text" id="payDate" placeholder="dd/mm/yyyy" maxlength="10"
+          oninput="fmtDateInput(this)" inputmode="numeric"/>
+        <input type="hidden" id="payDateISO"/>
+      </div>
     </div>
     <div class="fg"><label class="fl">Received by (volunteer)</label>
       <select class="fi" id="payReceivedBy"></select>
@@ -2809,7 +2813,8 @@ function editPayment(paymentId, donorId) {
   if (!p) return;
   $('payAmount').value  = p.amount      || '';
   $('payMode').value    = p.payment_mode || 'cash';
-  $('payDate').value    = p.paid_date   || TODAY;
+  $('payDate').value    = toDisplayDate(p.paid_date || TODAY);
+  $('payDateISO').value = p.paid_date   || TODAY;
   $('payNotes').value   = p.notes       || '';
   if ($('payRef')) $('payRef').value = p.txn_ref || '';
   if ($('payReceivedBy')) $('payReceivedBy').value = p.received_by || '';
@@ -3014,6 +3019,29 @@ async function saveSundayNote() {
   closeModal('sundayNoteModal');
   toast('Note saved');
 }
+
+function fmtDateInput(inp) {
+  // Auto-format as dd/mm/yyyy while typing
+  let v = inp.value.replace(/\D/g, '');
+  if (v.length >= 3) v = v.slice(0,2) + '/' + v.slice(2);
+  if (v.length >= 6) v = v.slice(0,5) + '/' + v.slice(5,9);
+  inp.value = v;
+  // Write ISO to hidden field
+  const parts = v.split('/');
+  if (parts.length === 3 && parts[2].length === 4) {
+    $('payDateISO').value = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+  } else {
+    $('payDateISO').value = '';
+  }
+}
+
+function toDisplayDate(isoDate) {
+  // Convert yyyy-mm-dd to dd/mm/yyyy
+  if (!isoDate) return '';
+  const [y,m,d] = isoDate.split('-');
+  return `${d}/${m}/${y}`;
+}
+  
 function togglePayRefField() {
   const mode = $('payMode').value;
   const wrap = $('payRefWrap');
@@ -3033,7 +3061,8 @@ function openPaymentModal(donorId) {
   $('payDonorId').value = donorId;
   ['payAmount','payNotes'].forEach(x => $(x).value = '');
   $('payMode').value = 'cash';
-  $('payDate').value = TODAY;
+  $('payDate').value = toDisplayDate(TODAY);
+  $('payDateISO').value = TODAY;
   $('payRef').value = '';
   togglePayRefField();
   hideErr('payModalErr');
@@ -3059,7 +3088,12 @@ async function savePayment() {
   const editPayId   = $('payDonorId').dataset.editPaymentId || '';
   const amount   = parseInt($('payAmount').value || 0);
   const mode     = $('payMode').value;
-  const date     = $('payDate').value;
+  if ((mode === 'online' || mode === 'cheque') && !txnRef) {
+    showErr('payModalErr', mode === 'online' ? 'UTR / Transaction ID is required for online payments' : 'Cheque number is required');
+    return;
+  }
+  const date     = $('payDateISO').value;
+  if (!date) { showErr('payModalErr','Enter a valid date in dd/mm/yyyy format'); return; }
   const recvBy   = $('payReceivedBy').value;
   const notes    = $('payNotes').value.trim();
   const txnRef   = $('payRef').value.trim();
