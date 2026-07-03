@@ -3155,7 +3155,7 @@ async function savePayment() {
   // Update paid_status on donor
   const d = donors.find(x => x.id === donorId);
   if (d) {
-    const totalPaid = (donorPayments[donorId]||[]).filter(p => p && p.amount != null).reduce((s,p) => s+(p.amount||0), 0);
+    const totalPaid = (donorPayments[donorId]||[]).filter(p => p && p.amount != null).reduce((s,p) => s+(p.amount||0), 0); 
     const status = totalPaid >= d.amount ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid';
     await sb.from('donors').update({ paid_status: status }).eq('id', donorId);
     d.paid_status = status;
