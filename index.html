@@ -3088,16 +3088,17 @@ async function savePayment() {
   const editPayId   = $('payDonorId').dataset.editPaymentId || '';
   const amount   = parseInt($('payAmount').value || 0);
   const mode     = $('payMode').value;
-  if ((mode === 'online' || mode === 'cheque') && !txnRef) {
-    showErr('payModalErr', mode === 'online' ? 'UTR / Transaction ID is required for online payments' : 'Cheque number is required');
-    return;
-  }
+  
   const date     = $('payDateISO').value;
   if (!date) { showErr('payModalErr','Enter a valid date in dd/mm/yyyy format'); return; }
   const recvBy   = $('payReceivedBy').value;
   const notes    = $('payNotes').value.trim();
   const txnRef   = $('payRef').value.trim();
 
+  if ((mode === 'online' || mode === 'cheque') && !txnRef) {
+    showErr('payModalErr', mode === 'online' ? 'UTR / Transaction ID is required for online payments' : 'Cheque number is required');
+    return;
+  }
   if (!amount || amount <= 0) { showErr('payModalErr','Enter a valid amount'); return; }
   if (!date)                  { showErr('payModalErr','Enter payment date');    return; }
 
