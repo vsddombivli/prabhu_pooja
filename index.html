@@ -567,6 +567,7 @@ select.fi{cursor:pointer;}
     <div class="fi-2">
       <div class="fg"><label class="fl">WhatsApp / Parent mobile *</label><input class="fi" type="tel" id="kMobile" maxlength="10" placeholder="9876543210" oninput="autoFillPassword()"/></div>
       <div class="fg"><label class="fl">Password (auto-generated)</label><input class="fi" type="text" id="kPass" placeholder="auto"/></div>
+      <div class="fg"><label class="fl">QR Code / Unique ID</label><input class="fi" id="kQR" placeholder="e.g. RSVDMBMUM0368 (auto-generated if blank)"/></div>
     </div>
     <div class="fg"><label class="fl">Photo (optional)</label>
     <div style="display:flex;gap:8px;">
@@ -1518,21 +1519,22 @@ function openKidModal(id) {
     $('kGender').value = k.gender    || '';
     $('kMobile').value = k.mobile    || '';
     $('kPass').value  = k.password_plain || '';
+    $('kQR').value    = k.qr_code    || '';
   } else {
-    ['kFirst','kLast','kNo','kDob','kMobile','kPass'].forEach(id => $(id).value = '');
+    ['kFirst','kLast','kNo','kDob','kMobile','kPass','kQR'].forEach(id => $(id).value = '');
     $('kGender').value = '';
   }
   openModal('kidModal');
 }
 
 async function saveKid() {
-  const id      = $('kidId').value;
   const first   = $('kFirst').value.trim();
   const last    = $('kLast').value.trim();
   const kidNo   = $('kNo').value.trim();
   const dob     = $('kDob').value;
   const gender  = $('kGender').value;
   const mobile  = $('kMobile').value.trim();
+  const qrCode  = $('kQR').value.trim() || null;
   const pass    = $('kPass').value.trim();
   const photo   = $('kPhoto').files[0];
 
