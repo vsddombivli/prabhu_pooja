@@ -341,7 +341,7 @@ select.fi{cursor:pointer;}
         </div>
       </div>
 
-      <!-- Row 3: Age group + Gender ratio + Streak leaderboard -->
+      <!-- Row 3: Age group + Gender ratio -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
         <div class="card" style="padding:14px;">
           <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Age groups</div>
@@ -351,13 +351,17 @@ select.fi{cursor:pointer;}
           <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Gender ratio</div>
           <div style="position:relative;height:140px;"><canvas id="dashGenderChart" role="img" aria-label="Gender ratio donut">Kids by gender.</canvas></div>
         </div>
+      </div>
+
+      <!-- Row 3: Streak Leaders -->
+      <div style="display:grid;margin-bottom:12px;">
         <div class="card" style="padding:14px;">
           <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">🔥 Streak leaders</div>
           <div id="dashStreakList" style="display:flex;flex-direction:column;gap:8px;"></div>
         </div>
       </div>
 
-      <!-- Row 4: Gift stock + Quarterly comparison -->
+      <!-- Row 5: Gift stock + Quarterly comparison -->
       <div style="display:grid;margin-bottom:12px;">
         <div class="card" style="padding:14px;">
           <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Gift stock remaining</div>
@@ -375,7 +379,7 @@ select.fi{cursor:pointer;}
         </div> -->
       </div>
 
-      <!-- Row 5: Income vs Expense (admin only) -->
+      <!-- Row 6: Income vs Expense (admin only) -->
       <div id="dashFinanceRow" style="display:none;margin-bottom:12px;">
         <div class="card" style="padding:14px;">
           <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Income vs expenses — this FY vs last FY (admin only)</div>
