@@ -90,7 +90,7 @@ select.fi{cursor:pointer;}
 .alert-blue{background:var(--bl);color:var(--blue);border:1px solid rgba(37,99,235,.2);}
 
 /* ── CARDS ── */
-.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;max-width:100%;overflow:visible;}
+.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;max-width:100%;}
 .scroll-hint{font-size:11px;color:var(--gray);padding:0 16px 8px;display:none;}
 @media(max-width:680px){.scroll-hint{display:block;}}
 .card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray);margin-bottom:12px;}
@@ -251,7 +251,6 @@ select.fi{cursor:pointer;}
 .photo-lightbox img{max-width:90vw;max-height:85vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5);}
 .photo-lightbox .lb-name{position:absolute;bottom:24px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;}
 .photo-lightbox .lb-close{position:absolute;top:16px;right:20px;color:#fff;font-size:28px;cursor:pointer;line-height:1;}
-
 </style>
 </head>
 <body>
@@ -545,8 +544,8 @@ select.fi{cursor:pointer;}
             <button class="btn btn-green" id="addStockBtn" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openStockEntryModal()">+ Add purchase</button>
           </div>
           <div class="scroll-hint">⟷ Swipe table left/right to see all columns</div>
-          <div style="overflow-x:scroll;-webkit-overflow-scrolling:touch;max-width:100%;display:block;">
-            <table class="tbl" id="stockTable" style="min-width:680px;width:max-content;">
+          <div style="overflow-x:scroll;-webkit-overflow-scrolling:touch;max-width:100%;display:block;border-radius:0 0 var(--r) var(--r);">
+            <table class="tbl" id="stockTable" style="min-width:700px;width:max-content;">
               <thead><tr>
                 <th>Gift</th><th>Qty bought</th><th>Qty left</th><th>Buy price (₹)</th><th>Transport (₹)</th><th>Total cost (₹)</th><th>Date</th><th></th>
               </tr></thead>
@@ -1240,6 +1239,7 @@ function doLogout() {
   $('loginMobile').value = ''; $('loginPass').value = '';
   $('appView').style.display = 'none';
   $('loginView').style.display = 'block';
+  volunteerWelcomed = false;
   showLoginView();
 }
 
@@ -1866,7 +1866,10 @@ function renderKidList() {
         const kidNoFmt = '#' + String(k.kid_no).replace(/\D/g,'').padStart(3,'0');
         // Avatar: clicking opens photo picker
         const av = k.photo_url
-          ? `<div class="av" style="cursor:pointer;" onclick="uploadKidPhoto('${k.id}')" title="Change photo"><img src="${k.photo_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/></div>`
+          ? `<div style="position:relative;display:inline-block;">
+               <div class="av" style="cursor:pointer;" onclick="viewKidPhoto('${k.photo_url}','${k.full_name}')" title="View photo"><img src="${k.photo_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/></div>
+               <div onclick="uploadKidPhoto('${k.id}')" title="Change photo" style="position:absolute;bottom:-2px;right:-2px;width:16px;height:16px;background:#2a78d6;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:9px;color:#fff;border:1.5px solid #fff;">✏</div>
+             </div>`
           : `<div class="av" style="background:${c.bg};color:${c.fg};font-size:11px;cursor:pointer;" onclick="uploadKidPhoto('${k.id}')" title="Add photo">${ini(k.full_name)}</div>`;
         return `<tr class="${k.is_active?'':'age-warn'}">
           <td><input type="checkbox" class="kid-chk" data-id="${k.id}" onclick="onKidCheck()"/></td>
@@ -4679,11 +4682,12 @@ async function exportFinReport() {
   XLSX.writeFile(wb, `Financial_Report_${fy}.xlsx`);
   toast('Financial report exported');
 }
+let volunteerWelcomed = false;
+
 function showVolunteerWelcome() {
   if (role !== 'volunteer') return;
-  // Only show once per session
-  if (sessionStorage.getItem('vol_welcomed')) return;
-  sessionStorage.setItem('vol_welcomed', '1');
+  if (volunteerWelcomed) return;
+  volunteerWelcomed = true;
 
   const popper = document.createElement('div');
   popper.className = 'vol-popper';
