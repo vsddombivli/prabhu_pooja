@@ -1559,13 +1559,13 @@ async function renderDashboard() {
       else break;
     }
     return { ...k, streak };
-  }).filter(k => k.streak > 0).sort((a,b) => b.streak - a.streak).slice(0, 5);
+  }).filter(k => k.streak > 0).sort((a,b) => b.streak - a.streak).slice(0, 3);
 
-  const streakColors = ['#4a3aa7','#2a78d6','#1baf7a','#eda100','#73726c'];
+  const streakColors = ['#4a3aa7','#2a78d6','#1baf7a'];
   $('dashStreakList').innerHTML = streakKids.length
     ? streakKids.map((k, i) => {
         const c = avColor(k.full_name);
-        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉';
         return `<div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:13px;min-width:20px;">${medal}</span>
           <div class="av" style="width:24px;height:24px;font-size:9px;background:${c.bg};color:${c.fg};">${ini(k.full_name)}</div>
