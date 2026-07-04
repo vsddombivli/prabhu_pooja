@@ -90,7 +90,7 @@ select.fi{cursor:pointer;}
 .alert-blue{background:var(--bl);color:var(--blue);border:1px solid rgba(37,99,235,.2);}
 
 /* ── CARDS ── */
-.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;max-width:100%;overflow:hidden;}
+.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;max-width:100%;overflow:visible;}
 .scroll-hint{font-size:11px;color:var(--gray);padding:0 16px 8px;display:none;}
 @media(max-width:680px){.scroll-hint{display:block;}}
 .card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray);margin-bottom:12px;}
@@ -242,9 +242,16 @@ select.fi{cursor:pointer;}
 .cat-chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:var(--bl);color:var(--blue);}
 @media(max-width:480px){.gift-grid{grid-template-columns:repeat(2,1fr);gap:8px;}}
 .photo-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.vol-popper{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);animation:fadeIn .3s ease;}
+.vol-popper-card{background:#fff;border-radius:20px;padding:32px 28px;max-width:320px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25);animation:popIn .4s cubic-bezier(.34,1.56,.64,1);}
+@keyframes popIn{from{transform:scale(.7);opacity:0;}to{transform:scale(1);opacity:1;}}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+.confetti-emoji{font-size:48px;display:block;margin-bottom:12px;animation:bounce 1s ease infinite alternate;}
+@keyframes bounce{from{transform:translateY(0);}to{transform:translateY(-8px);}}
 .photo-lightbox img{max-width:90vw;max-height:85vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5);}
 .photo-lightbox .lb-name{position:absolute;bottom:24px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;}
 .photo-lightbox .lb-close{position:absolute;top:16px;right:20px;color:#fff;font-size:28px;cursor:pointer;line-height:1;}
+
 </style>
 </head>
 <body>
@@ -439,7 +446,8 @@ select.fi{cursor:pointer;}
         <table class="tbl" id="kidTable">
           <thead><tr>
             <th style="width:36px;"><input type="checkbox" id="kidSelectAll" onclick="toggleSelectAllKids(this)" title="Select all"/></th>
-            <th>ID</th><th>Name</th><th>Age</th><th>Gender</th><th>Mobile</th><th>Q.Att</th><th>Points</th><th>Status</th><th></th>
+            <th style="width:40px;"></th>
+            <th>ID</th><th>Name</th><th>Age</th><th>Gender</th><th>Points</th><th>Status</th>
           </tr></thead>
           <tbody id="kidTbody"></tbody>
         </table>
@@ -537,8 +545,8 @@ select.fi{cursor:pointer;}
             <button class="btn btn-green" id="addStockBtn" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openStockEntryModal()">+ Add purchase</button>
           </div>
           <div class="scroll-hint">⟷ Swipe table left/right to see all columns</div>
-          <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
-            <table class="tbl" id="stockTable" style="min-width:680px;">
+          <div style="overflow-x:scroll;-webkit-overflow-scrolling:touch;max-width:100%;display:block;">
+            <table class="tbl" id="stockTable" style="min-width:680px;width:max-content;">
               <thead><tr>
                 <th>Gift</th><th>Qty bought</th><th>Qty left</th><th>Buy price (₹)</th><th>Transport (₹)</th><th>Total cost (₹)</th><th>Date</th><th></th>
               </tr></thead>
@@ -1281,6 +1289,7 @@ function enterApp() {
 
   // Build nav
   buildNav();
+  setTimeout(showVolunteerWelcome, 800); // slight delay so the UI settles first
 
   // Load data
   if (role === 'parent') {
@@ -1853,29 +1862,29 @@ function renderKidList() {
     ? list.map(k => {
         const c = avColor(k.full_name);
         const ageStr = age(k.dob);
+        // Format ID with leading zeros (always 3 digits)
+        const kidNoFmt = '#' + String(k.kid_no).replace(/\D/g,'').padStart(3,'0');
+        // Avatar: clicking opens photo picker
         const av = k.photo_url
-          ? `<div class="av"><img src="${k.photo_url}" alt=""/></div>`
-          : `<div class="av" style="background:${c.bg};color:${c.fg};font-size:11px;">${ini(k.full_name)}</div>`;
+          ? `<div class="av" style="cursor:pointer;" onclick="uploadKidPhoto('${k.id}')" title="Change photo"><img src="${k.photo_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/></div>`
+          : `<div class="av" style="background:${c.bg};color:${c.fg};font-size:11px;cursor:pointer;" onclick="uploadKidPhoto('${k.id}')" title="Add photo">${ini(k.full_name)}</div>`;
         return `<tr class="${k.is_active?'':'age-warn'}">
           <td><input type="checkbox" class="kid-chk" data-id="${k.id}" onclick="onKidCheck()"/></td>
-          <td><span style="font-weight:700;">#${k.kid_no}</span></td>
-          <td><div style="display:flex;align-items:center;gap:8px;">${av}<div><div style="font-weight:600;">${k.full_name}</div><div style="font-size:11px;color:var(--gray);">${k.mobile}</div></div></div></td>
-          <td>${ageStr}</td>
-          <td>${k.gender||'—'}</td>
-          <td>${k.mobile}</td>
-          <td><span class="points">${k.quarterly_points||0}</span></td>
-          <td>${(k.quarterly_points||0)*1}pts</td>
-          <td><span class="tag ${k.is_active?'tag-green':'tag-gray'}">${k.is_active?'Active':'Inactive'}</span></td>
           <td>
-            <div style="display:flex;gap:4px;">
-              <button class="btn btn-gray" style="padding:4px 10px;font-size:12px;" onclick="openKidModal('${k.id}')">Edit</button>
-              <button class="btn btn-gray" style="padding:4px 10px;font-size:12px;" onclick="uploadKidPhoto('${k.id}')">📷</button>
-              ${role!=='volunteer'?`<button class="btn btn-red" style="padding:4px 10px;font-size:12px;" onclick="deleteKid('${k.id}')">Del</button>`:''}
+            <div style="display:flex;gap:4px;align-items:center;">
+              <button onclick="openKidModal('${k.id}')" title="Edit" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px;">✏️</button>
+              ${role!=='volunteer'?`<button onclick="deleteKid('${k.id}')" title="Delete" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px;">🗑️</button>`:''}
             </div>
           </td>
+          <td><span style="font-weight:700;">${kidNoFmt}</span></td>
+          <td><div style="display:flex;align-items:center;gap:8px;">${av}<div style="font-weight:600;">${k.full_name}</div></div></td>
+          <td>${ageStr}</td>
+          <td style="text-transform:capitalize;">${k.gender||'—'}</td>
+          <td><span class="points">${(k.quarterly_points||0)}pts</span></td>
+          <td><span class="tag ${k.is_active?'tag-green':'tag-gray'}">${k.is_active?'Active':'Inactive'}</span></td>
         </tr>`;
       }).join('')
-    : `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--gray);">No kids found.</td></tr>`;
+    : `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--gray);">No kids found.</td></tr>`;
 }
 function onKidCheck() {
   const all   = [...document.querySelectorAll('.kid-chk')];
@@ -4670,7 +4679,37 @@ async function exportFinReport() {
   XLSX.writeFile(wb, `Financial_Report_${fy}.xlsx`);
   toast('Financial report exported');
 }
+function showVolunteerWelcome() {
+  if (role !== 'volunteer') return;
+  // Only show once per session
+  if (sessionStorage.getItem('vol_welcomed')) return;
+  sessionStorage.setItem('vol_welcomed', '1');
 
+  const popper = document.createElement('div');
+  popper.className = 'vol-popper';
+  popper.innerHTML = `
+    <div class="vol-popper-card">
+      <span class="confetti-emoji">🙏</span>
+      <div style="font-size:22px;font-weight:700;margin-bottom:8px;color:#1a1a1a;">
+        Thank you, ${me?.full_name?.split(' ')[0] || 'dear volunteer'}!
+      </div>
+      <div style="font-size:14px;color:#52514e;line-height:1.6;margin-bottom:20px;">
+        Your time and energy for this noble cause is truly appreciated.<br><br>
+        <strong style="color:#1baf7a;">VSD is grateful to you 🌟</strong><br>
+        <span style="font-size:12px;">May your seva bring you endless blessings.</span>
+      </div>
+      <button onclick="this.closest('.vol-popper').remove()"
+        style="background:#2a78d6;color:#fff;border:none;border-radius:10px;padding:12px 32px;font-size:14px;font-weight:600;cursor:pointer;width:100%;">
+        Let's get started! 🚀
+      </button>
+    </div>`;
+  // Tap outside to dismiss
+  popper.addEventListener('click', e => { if (e.target === popper) popper.remove(); });
+  document.body.appendChild(popper);
+
+  // Auto-dismiss after 8 seconds
+  setTimeout(() => { if (popper.parentElement) popper.remove(); }, 8000);
+}
 // ── Gift brochure PDF ─────────────────────────────
 async function exportGiftBrochure() {
   if (!gifts.length) { toast('No gifts in gallery'); return; }
