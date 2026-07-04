@@ -2279,19 +2279,37 @@ async function generateQRPdf() {
     const x = marginX + col * cellW;
     const y = marginY + row * cellH;
 
-    // Generate QR as data URL using qrcode library
-    const qrDataUrl = await QRCode.toDataURL(k.qr_code, {
-      width: 200, margin: 1,
-      color: { dark: '#000000', light: '#ffffff' }
+    // Generate QR using qrcodejs into a temp div
+    const qrDataUrl = await new Promise(res => {
+      const div = document.createElement('div');
+      div.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+      document.body.appendChild(div);
+      new QRCode(div, {
+        text: k.qr_code, width: 200, height: 200,
+        colorDark: '#000000', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+      // qrcodejs renders async via image — wait for it
+      setTimeout(() => {
+        const canvas = div.querySelector('canvas');
+        const img    = div.querySelector('img');
+        let dataUrl;
+        if (canvas) {
+          dataUrl = canvas.toDataURL('image/png');
+        } else if (img) {
+          dataUrl = img.src;
+        }
+        document.body.removeChild(div);
+        res(dataUrl);
+      }, 100);
     });
 
     // Draw border
     doc.setDrawColor(180);
     doc.setLineWidth(0.3);
     doc.rect(x, y, cellW - 1, cellH - 1);
-
     // Draw QR image
-    doc.addImage(qrDataUrl, 'PNG', x + 1.5, y + 1.5, qrSize, qrSize);
+    if (qrDataUrl) doc.addImage(qrDataUrl, 'PNG', x + 1.5, y + 1.5, qrSize, qrSize);
 
     // Kid name below QR
     doc.setFontSize(6);
@@ -2725,7 +2743,7 @@ async function switchFY(fy, btn) {
 async function loadPhase2() {
   if (!sb || !myLocation) return;
   if (!activeFY) activeFY = currentFY();
-  await Promise.all([loadDonors(), loadAllUsers(), loadAllLocations(), loadGiftData(), loadRecentAttendance()]);
+  await Promise.all([loadDonors(), loadAllUsers(), loadAllLocations(), loadGiftData(), loadRecentAttendance(), loadStockData()]);
 }
 
 async function loadRecentAttendance() {
@@ -4203,10 +4221,11 @@ function buildStockFYTabs() {
 
 async function switchStockFY(fy, btn) {
   activeStockFY = fy;
+  activeFY = fy;   // sync donor FY too
   document.querySelectorAll('#stockFyTabs .fy-tab').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   if ($('stockFYLabel')) $('stockFYLabel').textContent = fy;
-  await loadStockData();
+  await Promise.all([loadStockData(), loadDonors()]);
   _renderStockFinance();
 }
 
@@ -4723,10 +4742,10 @@ async function exportGiftBrochure() {
       if (y + 30 > pageH - margin) { doc.addPage(); y = margin; }
       doc.setFontSize(12); doc.setFont(undefined,'bold'); doc.text(v.name || '', margin, y); y += 6;
       doc.setFontSize(10); doc.setFont(undefined,'normal'); doc.setTextColor(60);
-      if (v.mobile)  { doc.text('📞 ' + v.mobile, margin + 3, y); y += 5; }
-      if (v.mobile2) { doc.text('📞 ' + v.mobile2, margin + 3, y); y += 5; }
+      if (v.mobile)  { doc.text('Ph: ' + v.mobile, margin + 3, y); y += 5; }
+      if (v.mobile2) { doc.text('Ph: ' + v.mobile2, margin + 3, y); y += 5; }
       if (v.address) {
-        const lines = doc.splitTextToSize('📍 ' + v.address, pageW - 2 * margin - 3);
+        const lines = doc.splitTextToSize('Addr: ' + v.address, pageW - 2 * margin - 3);
         doc.text(lines, margin + 3, y); y += lines.length * 5;
       }
       doc.setTextColor(0); y += 4;
