@@ -324,7 +324,7 @@ select.fi{cursor:pointer;}
         <div class="card" style="padding:14px;">
           <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Monthly attendance trend</div>
           <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
-            <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:2px;background:#2a78d6;display:inline-block;"></span>Sessions</span>
+            <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:2px;background:#2a78d6;display:inline-block;"></span>Present</span>
             <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:2px;background:#e1e0d9;display:inline-block;"></span>Absent</span>
           </div>
           <div style="position:relative;height:160px;"><canvas id="dashTrendChart" role="img" aria-label="Monthly attendance trend">Monthly sessions and absent kids.</canvas></div>
@@ -1441,7 +1441,7 @@ async function renderDashboard() {
   $('dashMetrics').innerHTML = `
     <div class="metric"><div class="metric-val blue">${active.length}</div><div class="metric-lbl">Total active kids</div></div>
     <div class="metric"><div class="metric-val green">${kidsWithAtt(curMonthStart, curMonthEnd)}</div><div class="metric-lbl">Attended this month</div></div>
-    <div class="metric"><div class="metric-val" style="color:var(--amber);">${totalSessions(curQStart, curQEnd)}</div><div class="metric-lbl">Sessions this quarter</div></div>
+    <div class="metric"><div class="metric-val" style="color:var(--amber);">${totalSessions(curQStart, curQEnd)}</div><div class="metric-lbl">Attendance this quarter</div></div>
     <div class="metric"><div class="metric-val red">${kidsZeroAtt(curMonthStart, curMonthEnd)}</div><div class="metric-lbl">0 attendance this month</div></div>`;
 
   // ── Monthly trend (last 6 months) ────────────────
