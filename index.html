@@ -358,12 +358,13 @@ select.fi{cursor:pointer;}
       </div>
 
       <!-- Row 4: Gift stock + Quarterly comparison -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div style="display:none;margin-bottom:12px;">
         <div class="card" style="padding:14px;">
           <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Gift stock remaining</div>
           <div id="dashStockWrap" style="position:relative;height:160px;"><canvas id="dashStockChart" role="img" aria-label="Gift stock bought vs remaining">Stock per gift type.</canvas></div>
           <div id="dashStockEmpty" style="display:none;color:var(--gray);font-size:13px;padding:20px 0;text-align:center;">No gift stock entries yet.</div>
         </div>
+        <!--
         <div class="card" style="padding:14px;">
           <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Quarter comparison</div>
           <div style="display:flex;gap:8px;margin-bottom:8px;">
@@ -371,7 +372,7 @@ select.fi{cursor:pointer;}
             <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:2px;background:#b5d4f4;display:inline-block;"></span>Last quarter</span>
           </div>
           <div style="position:relative;height:160px;"><canvas id="dashQtrChart" role="img" aria-label="Quarter comparison bar chart">This vs last quarter per month.</canvas></div>
-        </div>
+        </div> -->
       </div>
 
       <!-- Row 5: Income vs Expense (admin only) -->
