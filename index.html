@@ -1447,7 +1447,7 @@ async function renderDashboard() {
 
   // ── Monthly trend (last 6 months) ────────────────
   const months6 = [];
-  for (let i = 5; i >= 0; i--) {
+  for (let i = 2; i >= 0; i--) {
     const d = new Date(y, m - i, 1);
     const mStart = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
     const mEnd   = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0];
