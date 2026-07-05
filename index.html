@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
@@ -251,6 +252,8 @@ select.fi{cursor:pointer;}
 .photo-lightbox img{max-width:90vw;max-height:85vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5);}
 .photo-lightbox .lb-name{position:absolute;bottom:24px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;}
 .photo-lightbox .lb-close{position:absolute;top:16px;right:20px;color:#fff;font-size:28px;cursor:pointer;line-height:1;}
+.qr-scan-pulse{animation:qrPulse 1.5s ease infinite;}
+@keyframes qrPulse{0%,100%{border-color:#2a78d6;}50%{border-color:#1baf7a;}}
 </style>
 </head>
 <body>
@@ -401,6 +404,9 @@ select.fi{cursor:pointer;}
 
     <!-- ── ATTENDANCE ── -->
     <div id="screen-attendance" class="screen">
+      <div style="margin-bottom:10px;">
+        <button class="btn btn-green" onclick="openQRScanner()" style="width:100%;padding:12px;font-size:15px;">📷 Scan QR Code to mark attendance</button>
+      </div>
       <div id="attDayBar" class="alert alert-green" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <span id="attDayLabel">Loading…</span>
         <span id="attCountBadge" style="font-weight:700;font-size:15px;">0/0</span>
@@ -2346,6 +2352,124 @@ async function generateQRPdf() {
   btn.textContent = '⬇ Download PDF'; btn.disabled = false;
   closeModal('qrPdfModal');
   toast(`PDF generated for ${selectedKids.length} kids`);
+}
+// ═══════════════════════════════════════════════════
+// QR SCANNER
+// ═══════════════════════════════════════════════════
+let qrStream    = null;
+let qrAnimFrame = null;
+let qrLastScan  = '';   // debounce — prevent scanning same code twice in a row
+
+async function openQRScanner() {
+  openModal('qrScanModal');
+  $('qrScanStatus').textContent = 'Starting camera…';
+  $('qrScanStatus').style.background = 'rgba(0,0,0,.6)';
+  try {
+    qrStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+    });
+    const video = $('qrVideo');
+    video.srcObject = qrStream;
+    video.play();
+    video.onloadedmetadata = () => scanQRFrame();
+    $('qrScanStatus').textContent = 'Point camera at QR code';
+  } catch(e) {
+    $('qrScanStatus').textContent = 'Camera access denied. Please allow camera permission.';
+    $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
+  }
+}
+
+function closeQRScanner() {
+  if (qrStream) { qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
+  if (qrAnimFrame) { cancelAnimationFrame(qrAnimFrame); qrAnimFrame = null; }
+  qrLastScan = '';
+  closeModal('qrScanModal');
+}
+
+function scanQRFrame() {
+  const video  = $('qrVideo');
+  const canvas = $('qrCanvas');
+  if (!video || !canvas || !qrStream) return;
+  if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+    qrAnimFrame = requestAnimationFrame(scanQRFrame); return;
+  }
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+  if (code && code.data && code.data !== qrLastScan) {
+    qrLastScan = code.data;
+    handleQRScan(code.data);
+  } else {
+    qrAnimFrame = requestAnimationFrame(scanQRFrame);
+  }
+}
+
+async function handleQRScan(qrData) {
+  $('qrScanStatus').textContent = '⏳ Processing…';
+  $('qrScanStatus').style.background = 'rgba(26,130,115,.85)';
+
+  // Find kid by qr_code
+  const kid = kids.find(k => k.qr_code === qrData.trim());
+  if (!kid) {
+    $('qrScanStatus').textContent = '❌ Unknown QR code. Not registered at this location.';
+    $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
+    // Resume scanning after 2s
+    setTimeout(() => { qrLastScan = ''; qrAnimFrame = requestAnimationFrame(scanQRFrame); }, 2000);
+    return;
+  }
+
+  // Check if already marked today
+  if (attendance[kid.id]) {
+    $('qrScanStatus').textContent = `✅ ${kid.full_name} — attendance already marked today`;
+    $('qrScanStatus').style.background = 'rgba(26,130,115,.85)';
+    toast(`${kid.full_name} — already marked ✓`);
+    closeQRScanner();
+    return;
+  }
+
+  // Mark attendance
+  const { data: attRow, error } = await sb.from('attendance').insert({
+    kid_id      : kid.id,
+    location_id : myLocation.id,
+    event_date  : TODAY,
+    points      : 10,
+    marked_by   : me.id,
+  }).select().single();
+
+  if (error) {
+    $('qrScanStatus').textContent = '❌ Error: ' + error.message;
+    $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
+    setTimeout(() => { qrLastScan = ''; qrAnimFrame = requestAnimationFrame(scanQRFrame); }, 2000);
+    return;
+  }
+
+  // Update points
+  const newPts = (kid.quarterly_points || 0) + 10;
+  await sb.from('kids').update({ quarterly_points: newPts }).eq('id', kid.id);
+  kid.quarterly_points = newPts;
+
+  // Update local state
+  attendance[kid.id] = attRow;
+  if (!allKidAtt[kid.id]) allKidAtt[kid.id] = [];
+  allKidAtt[kid.id].push({ kid_id: kid.id, event_date: TODAY });
+
+  $('qrScanStatus').textContent = `🎉 ${kid.full_name} — marked present!`;
+  $('qrScanStatus').style.background = 'rgba(27,175,122,.9)';
+
+  // Show bottom toast and close scanner
+  toast(`✓ ${kid.full_name} marked present`);
+  renderAttList();
+
+  // Keep scanner open for next kid — reset after 1.5s
+  setTimeout(() => {
+    qrLastScan = '';
+    $('qrScanStatus').textContent = 'Point camera at next QR code';
+    $('qrScanStatus').style.background = 'rgba(0,0,0,.6)';
+    qrAnimFrame = requestAnimationFrame(scanQRFrame);
+  }, 1500);
 }
 // ═══════════════════════════════════════════════════
 // EXCEL IMPORT / EXPORT
@@ -5010,6 +5134,31 @@ async function fetchImageAsDataURL(url) {
   <div class="modal-foot">
     <button class="btn btn-gray" onclick="closeModal('qrPdfModal')">Cancel</button>
     <button class="btn btn-green" onclick="generateQRPdf()">⬇ Download PDF</button>
+  </div>
+</div>
+</div>
+<!-- QR Scanner Modal -->
+<div class="modal-overlay" id="qrScanModal">
+<div class="modal" style="max-width:360px;">
+  <div class="modal-head">
+    <div class="modal-title">Scan kid's QR code</div>
+    <button style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--gray);" onclick="closeQRScanner()">&#x2715;</button>
+  </div>
+  <div class="modal-body" style="padding:0;">
+    <div style="position:relative;width:100%;background:#000;border-radius:0 0 8px 8px;overflow:hidden;">
+      <video id="qrVideo" style="width:100%;display:block;" playsinline autoplay muted></video>
+      <canvas id="qrCanvas" style="display:none;"></canvas>
+      <!-- Targeting overlay -->
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+        <div style="width:200px;height:200px;border:3px solid #2a78d6;border-radius:12px;box-shadow:0 0 0 2000px rgba(0,0,0,.4);">
+          <div style="position:absolute;top:0;left:0;width:20px;height:20px;border-top:4px solid #2a78d6;border-left:4px solid #2a78d6;border-radius:4px 0 0 0;"></div>
+          <div style="position:absolute;top:0;right:0;width:20px;height:20px;border-top:4px solid #2a78d6;border-right:4px solid #2a78d6;border-radius:0 4px 0 0;"></div>
+          <div style="position:absolute;bottom:0;left:0;width:20px;height:20px;border-bottom:4px solid #2a78d6;border-left:4px solid #2a78d6;border-radius:0 0 0 4px;"></div>
+          <div style="position:absolute;bottom:0;right:0;width:20px;height:20px;border-bottom:4px solid #2a78d6;border-right:4px solid #2a78d6;border-radius:0 0 4px 0;"></div>
+        </div>
+      </div>
+      <div id="qrScanStatus" style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;text-align:center;padding:8px;font-size:13px;">Point camera at QR code</div>
+    </div>
   </div>
 </div>
 </div>
