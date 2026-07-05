@@ -723,7 +723,14 @@ select.fi{cursor:pointer;}
     <div class="fi-2">
       <div class="fg"><label class="fl">WhatsApp / Parent mobile *</label><input class="fi" type="tel" id="kMobile" maxlength="10" placeholder="9876543210" oninput="autoFillPassword()"/></div>
       <div class="fg"><label class="fl">Password (auto-generated)</label><input class="fi" type="text" id="kPass" placeholder="auto"/></div>
-      <div class="fg" id="kQRWrap"><label class="fl">QR Code / Unique ID</label><input class="fi" id="kQR" placeholder="e.g. RSVDMBEMUMBAI000368"/></div>
+      <div class="fg" id="kQRWrap">
+        <label class="fl">QR Code / Unique ID</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="fi" id="kQR" placeholder="e.g. RSVDMBEMUMBAI000368" style="flex:1;" oninput="if($('kQRPreviewBtn'))$('kQRPreviewBtn').style.display=this.value?'':'none';"/>
+          <button type="button" id="kQRPreviewBtn" onclick="previewKidQR()" title="View QR code"
+            style="display:none;background:var(--bl);border:1px solid var(--blue);border-radius:var(--r);padding:8px 12px;cursor:pointer;font-size:16px;flex-shrink:0;">🔲</button>
+        </div>
+      </div>
     </div>
     <div class="fg"><label class="fl">Photo (optional)</label>
     <div style="display:flex;gap:8px;">
@@ -1959,6 +1966,8 @@ function openKidModal(id) {
     $('kMobile').value = k.mobile    || '';
     $('kPass').value  = k.password_plain || '';
     $('kQR').value    = k.qr_code    || '';
+    const hasQR = !!(k.qr_code);
+    if ($('kQRPreviewBtn')) $('kQRPreviewBtn').style.display = hasQR ? '' : 'none';
   } else {
     ['kFirst','kLast','kNo','kDob','kMobile','kPass','kQR'].forEach(id => $(id).value = '');
     $('kGender').value = '';
@@ -2470,6 +2479,84 @@ async function handleQRScan(qrData) {
     $('qrScanStatus').style.background = 'rgba(0,0,0,.6)';
     qrAnimFrame = requestAnimationFrame(scanQRFrame);
   }, 1500);
+}
+function previewKidQR() {
+  const qrVal  = $('kQR')?.value.trim();
+  const kidName = ($('kFirst')?.value||'') + ' ' + ($('kLast')?.value||'');
+  if (!qrVal) { toast('No QR code to preview'); return; }
+
+  $('qrPreviewTitle').textContent = kidName.trim() || 'QR Code';
+  $('qrPreviewCode').textContent  = qrVal;
+
+  // Clear and render fresh QR
+  const box = $('qrPreviewBox');
+  box.innerHTML = '';
+  new QRCode(box, {
+    text         : qrVal,
+    width        : 200,
+    height       : 200,
+    colorDark    : '#000000',
+    colorLight   : '#ffffff',
+    correctLevel : QRCode.CorrectLevel.M
+  });
+  openModal('qrPreviewModal');
+}
+
+function printSingleQR() {
+  const qrVal   = $('kQR')?.value.trim();
+  const kidName = ($('kFirst')?.value||'') + ' ' + ($('kLast')?.value||'');
+  const kidNo   = $('kNo')?.value.trim();
+  if (!qrVal) return;
+
+  // Render QR to canvas/img first then open print window
+  const tempDiv = document.createElement('div');
+  tempDiv.style.cssText = 'position:absolute;left:-9999px;';
+  document.body.appendChild(tempDiv);
+  new QRCode(tempDiv, {
+    text: qrVal, width: 300, height: 300,
+    colorDark: '#000', colorLight: '#fff',
+    correctLevel: QRCode.CorrectLevel.M
+  });
+
+  setTimeout(() => {
+    const canvas = tempDiv.querySelector('canvas');
+    const img    = tempDiv.querySelector('img');
+    const src    = canvas ? canvas.toDataURL('image/png') : img?.src;
+    document.body.removeChild(tempDiv);
+    if (!src) { toast('QR render failed'); return; }
+
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head>
+      <title>QR - ${kidName}</title>
+      <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;}
+        .sticker{
+          width:50mm;height:50mm;
+          border:1px dashed #999;border-radius:4mm;
+          display:flex;flex-direction:column;align-items:center;justify-content:center;
+          padding:3mm;gap:2mm;
+          font-family:system-ui,sans-serif;
+        }
+        .sticker img{width:38mm;height:38mm;}
+        .sticker .name{font-size:7pt;font-weight:700;text-align:center;line-height:1.2;}
+        .sticker .id{font-size:6pt;color:#555;}
+        @media print{
+          body{min-height:unset;}
+          .sticker{border-style:solid;}
+          @page{size:50mm 50mm;margin:0;}
+        }
+      </style>
+    </head><body>
+      <div class="sticker">
+        <img src="${src}" alt="QR"/>
+        <div class="name">${kidName.trim()}</div>
+        <div class="id">#${String(kidNo).padStart(3,'0')}</div>
+      </div>
+    </body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 500);
+  }, 200);
 }
 // ═══════════════════════════════════════════════════
 // EXCEL IMPORT / EXPORT
@@ -5159,6 +5246,23 @@ async function fetchImageAsDataURL(url) {
       </div>
       <div id="qrScanStatus" style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;text-align:center;padding:8px;font-size:13px;">Point camera at QR code</div>
     </div>
+  </div>
+</div>
+</div>
+<!-- QR Preview Modal -->
+<div class="modal-overlay" id="qrPreviewModal">
+<div class="modal" style="max-width:320px;text-align:center;">
+  <div class="modal-head">
+    <div class="modal-title" id="qrPreviewTitle">QR Code</div>
+    <button style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--gray);" onclick="closeModal('qrPreviewModal')">&#x2715;</button>
+  </div>
+  <div class="modal-body" style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+    <div id="qrPreviewBox" style="padding:16px;background:#fff;border:2px solid var(--border);border-radius:12px;display:inline-block;"></div>
+    <div id="qrPreviewCode" style="font-size:11px;color:var(--gray);word-break:break-all;"></div>
+    <button class="btn btn-green" style="width:100%;" onclick="printSingleQR()">🖨 Print this QR</button>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-gray" onclick="closeModal('qrPreviewModal')">Close</button>
   </div>
 </div>
 </div>
