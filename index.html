@@ -2566,15 +2566,28 @@ async function importKids(input) {
   const reader = new FileReader();
   reader.onload = async e => {
     const wb   = XLSX.read(e.target.result, { type: 'binary' });
-    //const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    const rows = XLSX.utils.sheet_to_json(
-      wb.Sheets[wb.SheetNames[0]],
-      {
-        raw: false,
-        dateNF: 'yyyy-mm-dd'
-      }
-    );
-    let count = 0;
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw:false, dateNF:'yyyy-mm-dd' });
+
+    const total = rows.filter(r => (r['First Name']||r['first_name']) && (r['Mobile']||r['mobile'])).length;
+    if (!total) { toast('No valid rows found in Excel'); input.value=''; return; }
+
+    // Show persistent loading bar
+    const loadBar = document.createElement('div');
+    loadBar.id = 'importLoadBar';
+    loadBar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1a1a1a;color:#fff;z-index:99999;padding:12px 16px;font-size:13px;display:flex;flex-direction:column;gap:6px;';
+    loadBar.innerHTML = `
+      <div style="display:flex;justify-content:space-between;">
+        <span id="importLoadMsg">Processing...</span>
+        <span id="importLoadCount">0 / ${total}</span>
+      </div>
+      <div style="height:4px;background:#444;border-radius:2px;">
+        <div id="importLoadFill" style="height:100%;width:0%;background:#1baf7a;border-radius:2px;transition:width .2s;"></div>
+      </div>`;
+    document.body.appendChild(loadBar);
+
+    let count = 0, skipped = 0, qrUpdated = 0;
+    const errors = [];
+
     for (const row of rows) {
       const first  = String(row['First Name'] || row['first_name'] || '').trim();
       const last   = String(row['Last Name']  || row['last_name']  || '').trim();
@@ -2583,63 +2596,98 @@ async function importKids(input) {
       const mobile = String(row['Mobile'] || row['mobile'] || '').trim();
       const gender = String(row['Gender'] || row['gender'] || '').toLowerCase();
       const pass   = String(row['Password'] || row['password'] || ('VSD' + mobile.slice(-4)));
-      // QR code: blank string in excel = explicitly clear it; missing column = leave as-is
+      // QR: blank = clear, missing column = don't touch
       const qrRaw  = row.hasOwnProperty('QR Code') ? String(row['QR Code'] || '').trim() : undefined;
       const qrCode = qrRaw === undefined ? undefined : (qrRaw || null);
-      if (!first || !mobile) continue;
+
+      if (!first || !mobile) { skipped++; continue; }
+
+      // Update progress
+      const pct = Math.round(count / total * 100);
+      $('importLoadMsg').textContent = `Processing: ${first} ${last}`;
+      $('importLoadCount').textContent = `${count} / ${total}`;
+      $('importLoadFill').style.width = pct + '%';
+
       const obj = {
-        location_id   : myLocation.id,
-        first_name    : first,
-        last_name     : last,
-        kid_no        : kidNo || String(count + 1).padStart(3,'0'),
-        dob           : dob || null,
-        gender        : ['male','female','other'].includes(gender) ? gender : 'other',
+        location_id    : myLocation.id,
+        first_name     : first,
+        last_name      : last,
+        kid_no         : kidNo || String(count + 1).padStart(3,'0'),
+        dob            : dob || null,
+        gender         : ['male','female','other'].includes(gender) ? gender : 'other',
         mobile,
-        password_plain: pass,
-        unique_kid_ref: mobile + '-' + kidNo,
-        is_active     : true,
-        created_by    : me.id,
+        password_plain : pass,
+        unique_kid_ref : mobile + '-' + kidNo,
+        is_active      : true,
+        created_by     : me.id,
         ...(qrCode !== undefined && { qr_code: qrCode }),
       };
-      const { data: nd, error } = await sb.from('kids')
-        .upsert(obj, { onConflict: 'kid_no,location_id' }).select().single();
-      if (!error && nd) { kids = kids.filter(k => k.id !== nd.id); kids.push(nd); }
 
-      // Create parent auth account + profile (same logic as saveKid)
+      const { data: nd, error: kidErr } = await sb.from('kids')
+        .upsert(obj, { onConflict: 'kid_no,location_id' }).select().single();
+
+      if (kidErr) {
+        // QR unique constraint? try without QR
+        if (kidErr.message.includes('qr_code') || kidErr.message.includes('unique')) {
+          const objNoQR = { ...obj };
+          delete objNoQR.qr_code;
+          const { data: nd2, error: e2 } = await sb.from('kids')
+            .upsert(objNoQR, { onConflict: 'kid_no,location_id' }).select().single();
+          if (!e2 && nd2) {
+            // Now update QR separately to catch the specific error
+            if (qrCode) {
+              const { error: qrErr } = await sb.from('kids').update({ qr_code: qrCode }).eq('id', nd2.id);
+              if (!qrErr) { nd2.qr_code = qrCode; qrUpdated++; }
+              else { errors.push(`${first} ${last}: QR conflict — ${qrCode} already used`); }
+            }
+            kids = kids.filter(k => k.id !== nd2.id); kids.push(nd2);
+          } else {
+            errors.push(`${first} ${last}: ${e2?.message || 'unknown error'}`);
+          }
+        } else {
+          errors.push(`${first} ${last}: ${kidErr.message}`);
+        }
+      } else if (nd) {
+        kids = kids.filter(k => k.id !== nd.id); kids.push(nd);
+        if (qrCode) qrUpdated++;
+      }
+
+      // Parent auth — skip signUp for QR-only update runs to save time
+      // Only create if this is a new kid (no existing auth)
       const parentEmail = toEmail(mobile);
       const { data: adminSession } = await sb.auth.getSession();
-
-      const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
-        email    : parentEmail,
-        password : pass,
-        options  : { data: { full_name: first + ' ' + last + ' (parent)', mobile, role: 'parent' } }
+      const { data: signUpData } = await sb.auth.signUp({
+        email: parentEmail, password: pass,
+        options: { data: { full_name: first+' '+last+' (parent)', mobile, role:'parent' } }
       });
-
-      // Restore admin session immediately
-      if (adminSession?.session) {
-        await sb.auth.setSession({
-          access_token : adminSession.session.access_token,
-          refresh_token: adminSession.session.refresh_token,
-        });
-      }
-
+      if (adminSession?.session) await sb.auth.setSession({ access_token:adminSession.session.access_token, refresh_token:adminSession.session.refresh_token });
       if (signUpData?.user) {
-        await sb.from('profiles').upsert({
-          id          : signUpData.user.id,
-          mobile,
-          full_name   : first + ' ' + last + ' (parent)',
-          role        : 'parent',
-          location_id : null,
-          is_active   : true,
-        }, { onConflict: 'id' });
+        await sb.from('profiles').upsert({ id:signUpData.user.id, mobile, full_name:first+' '+last+' (parent)', role:'parent', location_id:null, is_active:true }, { onConflict:'id' });
       }
-      // If signUpErr contains 'already registered' — parent exists, skip silently
 
       count++;
     }
+
+    // Final update
+    $('importLoadFill').style.width = '100%';
+    $('importLoadMsg').textContent = 'Done!';
+    $('importLoadCount').textContent = `${count} / ${total}`;
+    setTimeout(() => { if ($('importLoadBar')) document.body.removeChild($('importLoadBar')); }, 2000);
+
     renderKidList(); renderDashboard();
-    toast(`Imported ${count} kids`);
     input.value = '';
+
+    // Summary toast
+    let summary = `✓ ${count} kids processed`;
+    if (qrUpdated)  summary += `, ${qrUpdated} QR codes updated`;
+    if (skipped)    summary += `, ${skipped} skipped`;
+    toast(summary);
+
+    // Show errors if any
+    if (errors.length) {
+      setTimeout(() => toast(`⚠️ ${errors.length} errors — open console for details`), 3000);
+      console.warn('Import errors:', errors);
+    }
   };
   reader.readAsBinaryString(file);
 }
