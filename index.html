@@ -544,14 +544,14 @@ select.fi{cursor:pointer;}
       <div style="display:grid;grid-template-columns:1fr;gap:12px;">
 
         <!-- Stock entries -->
-        <div class="card" style="padding:0;overflow:auto;">
+        <div class="card" style="padding:0;overflow:hidden;">
           <di  qv style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:14px 16px 10px;">
             <div class="card-title" style="margin:0;">Gift stock purchases</div>
             <button class="btn btn-green" id="addStockBtn" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openStockEntryModal()">+ Add purchase</button>
           </div>
           <div class="scroll-hint">⟷ Swipe table left/right to see all columns</div>
           <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;">
-            <table class="tbl" id="stockTable">
+            <table class="tbl" id="stockTable" style="min-width:680px;">
               <thead><tr>
                 <th>Gift</th><th>Qty bought</th><th>Qty left</th><th>Buy price (₹)</th><th>Transport (₹)</th><th>Total cost (₹)</th><th>Date</th><th></th>
               </tr></thead>
