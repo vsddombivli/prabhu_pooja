@@ -2452,7 +2452,7 @@ async function handleQRScan(qrData) {
     $('qrScanStatus').textContent = `✅ ${kid.full_name} — attendance already marked today`;
     $('qrScanStatus').style.background = 'rgba(26,130,115,.85)';
     toast(`${kid.full_name} — already marked ✓`);
-    closeQRScanner();
+    //closeQRScanner();
     return;
   }
 
