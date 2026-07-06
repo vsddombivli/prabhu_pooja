@@ -2303,58 +2303,72 @@ async function generateQRPdf() {
   const marginX   = (210 - cols * cellW) / 2;
   const marginY   = 10;
 
-  let col = 0, row = 0, page = 1;
+  let col = 0, row = 0;
+  let x = marginX;
+  let y = marginY;
 
   for (const k of selectedKids) {
-    if (col === 0 && row === 0 && page > 1) doc.addPage();
 
-    const x = marginX + col * cellW;
-    const y = marginY + row * cellH;
+    // Check if we need a new page BEFORE drawing
+    if (y + cellH > pageH - marginY) {
+      doc.addPage();
+      col = 0; row = 0;
+      x = marginX;
+      y = marginY;
+    }
 
-    // Generate QR using qrcodejs into a temp div
+    // Generate QR at small size to keep file size tiny
     const qrDataUrl = await new Promise(res => {
       const div = document.createElement('div');
       div.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
       document.body.appendChild(div);
       new QRCode(div, {
-        text: k.qr_code, width: 200, height: 200,
+        text: k.qr_code, width: 80, height: 80,
         colorDark: '#000000', colorLight: '#ffffff',
         correctLevel: QRCode.CorrectLevel.M
       });
-      // qrcodejs renders async via image — wait for it
       setTimeout(() => {
         const canvas = div.querySelector('canvas');
         const img    = div.querySelector('img');
         let dataUrl;
         if (canvas) {
-          dataUrl = canvas.toDataURL('image/png');
+          // Use JPEG at low quality to dramatically reduce file size
+          dataUrl = canvas.toDataURL('image/jpeg', 0.5);
         } else if (img) {
           dataUrl = img.src;
         }
         document.body.removeChild(div);
         res(dataUrl);
-      }, 100);
+      }, 80);
     });
 
     // Draw border
-    doc.setDrawColor(180);
+    doc.setDrawColor(150);
     doc.setLineWidth(0.3);
     doc.rect(x, y, cellW - 1, cellH - 1);
-    // Draw QR image
-    if (qrDataUrl) doc.addImage(qrDataUrl, 'PNG', x + 1.5, y + 1.5, qrSize, qrSize);
 
-    // Kid name below QR
-    doc.setFontSize(6);
-    doc.setTextColor(40);
-    const name = k.full_name.length > 18 ? k.full_name.slice(0,17) + '…' : k.full_name;
-    doc.text(name, x + cellW/2 - 0.5, y + qrSize + 4, { align: 'center' });
+    // Draw QR image
+    if (qrDataUrl) doc.addImage(qrDataUrl, 'JPEG', x + 1.5, y + 1.5, qrSize, qrSize);
+
+    // Kid name — allow wrapping across 2 lines
+    doc.setFontSize(5.5);
+    doc.setTextColor(30);
+    const nameLines = doc.splitTextToSize(k.full_name || '', cellW - 3);
+    const displayLines = nameLines.slice(0, 2); // max 2 lines
+    doc.text(displayLines, x + cellW/2 - 0.5, y + qrSize + 4, { align: 'center' });
     doc.setFontSize(5);
-    doc.setTextColor(120);
-    doc.text('#' + k.kid_no, x + cellW/2 - 0.5, y + qrSize + 7.5, { align: 'center' });
+    doc.setTextColor(100);
+    doc.text('#' + String(k.kid_no).padStart(3,'0'), x + cellW/2 - 0.5, y + qrSize + (displayLines.length > 1 ? 11 : 8), { align: 'center' });
 
     col++;
-    if (col >= cols) { col = 0; row++; }
-    if (row >= rows) { col = 0; row = 0; page++; }
+    if (col >= cols) {
+      col = 0;
+      row++;
+      x = marginX;
+      y = marginY + row * cellH;
+    } else {
+      x = marginX + col * cellW;
+    }  
   }
 
   doc.save(`QR_Codes_${myLocation?.name || 'Kids'}_${TODAY}.pdf`);
