@@ -1753,6 +1753,12 @@ function renderAttList() {
     dayBar.className = 'alert alert-amber';
     dayLabel.textContent = 'Today is not ' + dayNames[eventDay] + ' — attendance closed';
   }
+  // Disable QR scan button on wrong day
+  if ($('qrScanBtn')) {
+    $('qrScanBtn').disabled = !isEventDay;
+    $('qrScanBtn').style.opacity = isEventDay ? '1' : '0.5';
+    $('qrScanBtn').title = isEventDay ? '' : 'Attendance only allowed on ' + dayNames[eventDay] + 's';
+  }
 
   const srch = ($('attSearch')?.value || '').toLowerCase();
   const active = kids.filter(k => k.is_active);
@@ -2434,25 +2440,51 @@ function scanQRFrame() {
 }
 
 async function handleQRScan(qrData) {
+  // Check event day first
+  const eventDay  = myLocation?.event_day ?? 0;
+  const dayNames  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const todayDay  = new Date().getDay();
+  if (todayDay !== eventDay) {
+    $('qrScanStatus').textContent = '⛔ Attendance only on ' + dayNames[eventDay] + 's';
+    $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
+    setTimeout(() => {
+      qrLastScan = '';
+      $('qrScanStatus').textContent = 'Point camera at QR code';
+      $('qrScanStatus').style.background = 'rgba(0,0,0,.6)';
+      qrAnimFrame = requestAnimationFrame(scanQRFrame);
+    }, 2000);
+    return;
+  }
+
   $('qrScanStatus').textContent = '⏳ Processing…';
   $('qrScanStatus').style.background = 'rgba(26,130,115,.85)';
 
   // Find kid by qr_code
   const kid = kids.find(k => k.qr_code === qrData.trim());
   if (!kid) {
-    $('qrScanStatus').textContent = '❌ Unknown QR code. Not registered at this location.';
+    $('qrScanStatus').textContent = '❌ Unknown QR — not registered here';
     $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
-    // Resume scanning after 2s
-    setTimeout(() => { qrLastScan = ''; qrAnimFrame = requestAnimationFrame(scanQRFrame); }, 2000);
+    setTimeout(() => {
+      qrLastScan = '';
+      $('qrScanStatus').textContent = 'Point camera at QR code';
+      $('qrScanStatus').style.background = 'rgba(0,0,0,.6)';
+      qrAnimFrame = requestAnimationFrame(scanQRFrame);
+    }, 2000);
     return;
   }
 
-  // Check if already marked today
+  // Already marked today — show message, keep scanner open for next kid
   if (attendance[kid.id]) {
-    $('qrScanStatus').textContent = `✅ ${kid.full_name} — attendance already marked today`;
+    $('qrScanStatus').textContent = `✅ ${kid.full_name} — already marked today`;
     $('qrScanStatus').style.background = 'rgba(26,130,115,.85)';
     toast(`${kid.full_name} — already marked ✓`);
-    //closeQRScanner();
+    // Stay open — reset and resume scanning after 1.5s
+    setTimeout(() => {
+      qrLastScan = '';
+      $('qrScanStatus').textContent = 'Point camera at next QR code';
+      $('qrScanStatus').style.background = 'rgba(0,0,0,.6)';
+      qrAnimFrame = requestAnimationFrame(scanQRFrame);
+    }, 1500);
     return;
   }
 
@@ -2468,7 +2500,12 @@ async function handleQRScan(qrData) {
   if (error) {
     $('qrScanStatus').textContent = '❌ Error: ' + error.message;
     $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
-    setTimeout(() => { qrLastScan = ''; qrAnimFrame = requestAnimationFrame(scanQRFrame); }, 2000);
+    setTimeout(() => {
+      qrLastScan = '';
+      $('qrScanStatus').textContent = 'Point camera at QR code';
+      $('qrScanStatus').style.background = 'rgba(0,0,0,.6)';
+      qrAnimFrame = requestAnimationFrame(scanQRFrame);
+    }, 2000);
     return;
   }
 
@@ -2484,12 +2521,10 @@ async function handleQRScan(qrData) {
 
   $('qrScanStatus').textContent = `🎉 ${kid.full_name} — marked present!`;
   $('qrScanStatus').style.background = 'rgba(27,175,122,.9)';
-
-  // Show bottom toast and close scanner
   toast(`✓ ${kid.full_name} marked present`);
   renderAttList();
 
-  // Keep scanner open for next kid — reset after 1.5s
+  // Stay open — reset and resume scanning for next kid
   setTimeout(() => {
     qrLastScan = '';
     $('qrScanStatus').textContent = 'Point camera at next QR code';
