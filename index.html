@@ -405,7 +405,7 @@ select.fi{cursor:pointer;}
     <!-- ── ATTENDANCE ── -->
     <div id="screen-attendance" class="screen">
       <div style="margin-bottom:10px;">
-        <button class="btn btn-green" onclick="openQRScanner()" style="width:100%;padding:12px;font-size:15px;">📷 Scan QR Code to mark attendance</button>
+        <button class="btn btn-green" id="qrScanBtn" onclick="openQRScanner()" style="width:100%;padding:12px;font-size:15px;">📷 Scan QR Code to mark attendance</button>
       </div>
       <div id="attDayBar" class="alert alert-green" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <span id="attDayLabel">Loading…</span>
