@@ -2302,7 +2302,8 @@ async function generateQRPdf() {
   const cellH     = 37;    // cell height (30mm QR + name below)
   const marginX   = (210 - cols * cellW) / 2;
   const marginY   = 10;
-
+  const pageH     = 297; 
+  
   let col = 0, row = 0;
   let x = marginX;
   let y = marginY;
