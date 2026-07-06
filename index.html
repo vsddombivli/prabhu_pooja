@@ -2285,7 +2285,9 @@ async function generateQRPdf() {
   const selectedIds = [...document.querySelectorAll('.qr-kid-chk:checked')].map(c => c.value);
   if (!selectedIds.length) { toast('Select at least one kid'); return; }
 
-  const selectedKids = kids.filter(k => selectedIds.includes(k.id) && k.qr_code);
+  const selectedKids = kids
+  .filter(k => selectedIds.includes(k.id) && k.qr_code)
+  .sort((a, b) => String(a.kid_no).localeCompare(String(b.kid_no), undefined, { numeric: true }));
   const btn = document.querySelector('#qrPdfModal .btn-green');
   btn.textContent = 'Generating…'; btn.disabled = true;
 
