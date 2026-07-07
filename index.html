@@ -1850,7 +1850,7 @@ function renderAttList() {
             ${av}
             <div style="flex:1;min-width:0;">
             <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${k.full_name}</div>
-            <div style="font-size:11px;color:var(--gray);display:flex;align-items:center;gap:8px;">#${k.kid_no} · ${age(k.dob)} &nbsp; ${perfBar(pct3)}</div>
+            <div style="font-size:11px;color:var(--gray);display:flex;align-items:center;gap:8px;">#${String(k.kid_no).padStart(3,'0')} · ${age(k.dob)} &nbsp; ${perfBar(pct3)}</div>
           </div>
           <button class="att-btn ${pr?'present':''}" onclick="toggleAtt('${k.id}')" ${dis}>
             ${pr ? '✓ Present' : 'Mark'}
