@@ -5117,8 +5117,8 @@ async function exportGiftBrochure() {
 
     const catName    = g.gift_categories?.name || '';
     const vendorName = g.vendors?.name         || '';
-    const mrp        = g.mrp ? '₹' + g.mrp.toLocaleString('en-IN') : '';
-
+    const mrp = g.mrp || null;
+    
     // Gift photo
     if (g.photo_url) {
       try {
@@ -5139,7 +5139,7 @@ async function exportGiftBrochure() {
     doc.text(g.name || '', tx, y + 7);
     doc.setFont(undefined, 'normal'); doc.setFontSize(10); doc.setTextColor(80);
     if (catName)    { doc.text('Category: ' + catName, tx, y + 14); }
-    if (mrp)        { doc.setFontSize(12); doc.setTextColor(0); doc.setFont(undefined,'bold'); doc.text('MRP: ' + mrp, tx, y + 22); doc.setFont(undefined,'normal'); }
+    if (mrp)        { doc.setFontSize(12); doc.setTextColor(0); doc.setFont(undefined,'bold'); doc.text('MRP: Rs.' + (g.mrp||'').toLocaleString('en-IN'), tx, y + 22); doc.setFont(undefined,'normal'); }
     if (vendorName) { doc.setFontSize(10); doc.setTextColor(80); doc.text('Vendor: ' + vendorName, tx, y + 30); }
     if (g.description) {
       doc.setFontSize(9); doc.setTextColor(100);
