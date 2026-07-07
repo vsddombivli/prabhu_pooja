@@ -1516,7 +1516,7 @@ async function renderDashboard() {
     data: {
       labels: months6.map(x => x.label),
       datasets: [
-        { label:'Sessions', data: months6.map(x => x.sessions), backgroundColor:'#2a78d6', borderRadius:4, barPercentage:0.65 },
+        { label:'Present', data: months6.map(x => x.sessions), backgroundColor:'#2a78d6', borderRadius:4, barPercentage:0.65 },
         { label:'Absent',   data: months6.map(x => x.absent),   backgroundColor:'#e1e0d9', borderRadius:4, barPercentage:0.65 }
       ]
     },
