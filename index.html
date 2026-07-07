@@ -421,6 +421,22 @@ select.fi{cursor:pointer;}
         <button class="pill" onclick="setFilter('attFilter','present',this)">Present</button>
         <button class="pill" onclick="setFilter('attFilter','absent',this)">Absent</button>
       </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <select class="fi" id="attPerfFilter" style="width:auto;min-width:160px;" onchange="renderAttList()">
+          <option value="">All performance</option>
+          <option value="exceptional">🏆 Exceptional (100%)</option>
+          <option value="verygood">😊 Very good (60–99%)</option>
+          <option value="good">🙂 Good (30–59%)</option>
+          <option value="poor">😐 Poor (1–29%)</option>
+          <option value="verypoor">😔 Very poor (0%)</option>
+        </select>
+        <select class="fi" id="attSortBy" style="width:auto;min-width:140px;" onchange="renderAttList()">
+          <option value="id">Sort by ID</option>
+          <option value="name">Sort by name</option>
+          <option value="perf_asc">Performance ↑</option>
+          <option value="perf_desc">Performance ↓</option>
+        </select>
+      </div>
       <div id="attList"></div>
     </div>
 
@@ -441,6 +457,16 @@ select.fi{cursor:pointer;}
         <button class="pill active" onclick="setFilter('kidFilter','all',this)">All</button>
         <button class="pill" onclick="setFilter('kidFilter','active',this)">Active</button>
         <button class="pill" onclick="setFilter('kidFilter','inactive',this)">Inactive</button>
+      </div>
+      <div style="margin-bottom:10px;">
+        <select class="fi" id="kidSortBy" style="width:auto;min-width:160px;" onchange="renderKidList()">
+          <option value="id">Sort by ID</option>
+          <option value="name">Sort by name A–Z</option>
+          <option value="age_asc">Age: youngest first</option>
+          <option value="age_desc">Age: oldest first</option>
+          <option value="pts_desc">Points: highest first</option>
+          <option value="pts_asc">Points: lowest first</option>
+        </select>
       </div>
       <div class="card" style="padding:0;overflow:auto;">
         <div id="kidBulkBar" style="display:none;align-items:center;gap:10px;padding:8px 12px;background:var(--rl);border-radius:var(--r);margin-bottom:8px;">
@@ -1766,12 +1792,39 @@ function renderAttList() {
 
   $('attCountBadge').textContent = `${present.length}/${active.length}`;
 
+  const perfFilter = $('attPerfFilter')?.value || '';
+  const attSortBy  = $('attSortBy')?.value || 'id';
+
+  // Pre-compute perf % for each kid
+  const eventDaysList = lastNEventDays(8);
+  function kidPerfPct(k) {
+    const attSet = new Set((allKidAtt[k.id]||[]).map(a => a.event_date));
+    const present = eventDaysList.filter(d => attSet.has(d)).length;
+    return eventDaysList.length ? Math.round(present / eventDaysList.length * 100) : 0;
+  }
+  function perfBand(pct) {
+    if (pct === 0)      return 'verypoor';
+    if (pct < 30)       return 'poor';
+    if (pct < 60)       return 'good';
+    if (pct < 100)      return 'verygood';
+    return 'exceptional';
+  }
+
   let list = active.filter(k => {
-    const pr = !!attendance[k.id];
-    if (attFilter === 'present' && !pr) return false;
-    if (attFilter === 'absent'  &&  pr) return false;
-    if (srch && !k.full_name.toLowerCase().includes(srch) && !k.kid_no.includes(srch)) return false;
+    if (srch && !k.full_name.toLowerCase().includes(srch) && !String(k.kid_no).includes(srch)) return false;
+    if (attFilter === 'present') { if (!attendance[k.id]) return false; }
+    if (attFilter === 'absent')  { if (attendance[k.id])  return false; }
+    if (perfFilter) { if (perfBand(kidPerfPct(k)) !== perfFilter) return false; }
     return true;
+  });
+
+  // Sort
+  list.sort((a, b) => {
+    if (attSortBy === 'name')      return a.full_name.localeCompare(b.full_name);
+    if (attSortBy === 'perf_asc')  return kidPerfPct(a) - kidPerfPct(b);
+    if (attSortBy === 'perf_desc') return kidPerfPct(b) - kidPerfPct(a);
+    // Default: sort by ID numerically
+    return parseInt(a.kid_no) - parseInt(b.kid_no);
   });
 
   $('attList').innerHTML = list.length
@@ -1866,13 +1919,24 @@ async function toggleAtt(kidId) {
 // ═══════════════════════════════════════════════════
 function renderKidList() {
   const srch = ($('kidSearch')?.value || '').toLowerCase();
+  const kidSortBy = $('kidSortBy')?.value || 'id';
+
   let list = kids.filter(k => {
     if (kidFilter === 'active'   && !k.is_active) return false;
     if (kidFilter === 'inactive' &&  k.is_active) return false;
     if (srch && !k.full_name.toLowerCase().includes(srch)
-             && !k.kid_no.includes(srch)
-             && !k.mobile.includes(srch)) return false;
+             && !String(k.kid_no).includes(srch)
+             && !(k.mobile||'').includes(srch)) return false;
     return true;
+  });
+
+  list.sort((a, b) => {
+    if (kidSortBy === 'name')     return a.full_name.localeCompare(b.full_name);
+    if (kidSortBy === 'age_asc')  return (b.dob||'').localeCompare(a.dob||'');  // older dob = younger
+    if (kidSortBy === 'age_desc') return (a.dob||'').localeCompare(b.dob||'');
+    if (kidSortBy === 'pts_desc') return (b.quarterly_points||0) - (a.quarterly_points||0);
+    if (kidSortBy === 'pts_asc')  return (a.quarterly_points||0) - (b.quarterly_points||0);
+    return parseInt(a.kid_no||0) - parseInt(b.kid_no||0); // default: ID
   });
 
   if (!$('kidTbody')) return;
