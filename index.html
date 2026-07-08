@@ -3852,12 +3852,10 @@ function sendDonorReceipt(donorId) {
 *Mobile:* ${d.mobile}
 *Fiscal year:* ${d.fiscal_year || activeFY}
 *No. of Sundays:* ${d.num_sundays}
-*Gift type:* ${giftType}
 ━━━━━━━━━━━━━━━━━━
 💰 *Payment summary*
 Total amount: Rs.${(d.amount||0).toLocaleString('en-IN')}
 Amount paid:  Rs.${totalPaid.toLocaleString('en-IN')}
-Balance:      Rs.0
 Status: ✅ *FULLY PAID*
 ━━━━━━━━━━━━━━━━━━
 📋 *Payment details*
