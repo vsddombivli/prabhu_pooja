@@ -3740,6 +3740,8 @@ function renderDonorList() {
           ${role !== 'volunteer' ? `
           <button class="btn btn-gray" style="padding:4px 10px;font-size:12px;" onclick="openDonorModal('${d.id}')">Edit</button>
           <button class="btn btn-red"  style="padding:4px 10px;font-size:12px;" onclick="deleteDonor('${d.id}')">Del</button>` : ''}
+          ${d.paid_status === 'paid' ? `
+          <button class="btn btn-blue" style="padding:4px 10px;font-size:12px;background:var(--bl);color:var(--blue);border:1px solid var(--blue);" onclick="sendDonorReceipt('${d.id}')">🧾 Receipt</button>` : ''}
         </div>
       </div>
 
@@ -3816,7 +3818,63 @@ function openDonorModal(id) {
   }
   openModal('donorModal');
 }
+function sendDonorReceipt(donorId) {
+  const d        = donors.find(x => x.id === donorId);
+  if (!d) return;
+  const payments = donorPayments[donorId] || [];
+  const sundays  = donorSundays[donorId]  || [];
+  const totalPaid= payments.reduce((s,p) => s+(p.amount||0), 0);
+  const locName  = myLocation?.name  || 'Prabhu Pooja';
+  const locCity  = myLocation?.city  || '';
 
+  // Build payment detail lines
+  const payLines = payments.map((p,i) => {
+    const recv = allUsers.find(u => u.id === p.received_by);
+    const ref  = p.txn_ref ? ` | Ref: ${p.txn_ref}` : '';
+    const via  = recv ? ` | Rcvd by: ${recv.full_name}` : '';
+    return `  ${i+1}. Rs.${(p.amount||0).toLocaleString('en-IN')} | ${p.payment_mode.toUpperCase()} | ${fmtDate(p.paid_date)}${ref}${via}`;
+  }).join('\n');
+
+  // Sunday schedule lines
+  const sundayLines = sundays.length
+    ? sundays.map(s => `  • ${fmtDate(s.sunday_date)}`).join('\n')
+    : '  Not yet assigned';
+
+  const giftType = d.gift_source === 'self' ? 'Donor brings gift' : 'Temple gift arranged';
+  const today    = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+
+  const msg =
+`🙏 *Prabhu Pooja — Payment Receipt*
+📍 *${locName}${locCity ? ', ' + locCity : ''}*
+📅 Receipt date: ${today}
+━━━━━━━━━━━━━━━━━━
+*Donor:* ${d.full_name}
+*Mobile:* ${d.mobile}
+*Fiscal year:* ${d.fiscal_year || activeFY}
+*No. of Sundays:* ${d.num_sundays}
+*Gift type:* ${giftType}
+━━━━━━━━━━━━━━━━━━
+💰 *Payment summary*
+Total amount: Rs.${(d.amount||0).toLocaleString('en-IN')}
+Amount paid:  Rs.${totalPaid.toLocaleString('en-IN')}
+Balance:      Rs.0
+Status: ✅ *FULLY PAID*
+━━━━━━━━━━━━━━━━━━
+📋 *Payment details*
+${payLines}
+━━━━━━━━━━━━━━━━━━
+📆 *Sunday schedule*
+${sundayLines}
+━━━━━━━━━━━━━━━━━━
+🙏 Thank you for your generous contribution!
+Your seva is a blessing to all the childrens.
+*Vardhman Sanskar Dham*`;
+
+  // Open WhatsApp with pre-filled message
+  const phone = d.mobile.replace(/\D/g,'');
+  const url   = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+}
 function editPayment(paymentId, donorId) {
   // Reuse openPaymentModal but pre-fill with existing payment data
   openPaymentModal(donorId);
