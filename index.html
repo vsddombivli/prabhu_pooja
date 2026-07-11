@@ -1809,15 +1809,22 @@ async function renderDashboard() {
       return (data || []).reduce((s, p) => s + (p.amount || 0), 0);
     }
     async function fyExpense(fy) {
-      const [{ data: se }, { data: me }] = await Promise.all([
+      const [{ data: se }, { data: me }, { data: ds }] = await Promise.all([
         sb.from('gift_stock_entries').select('qty_bought,buy_price_per_unit,transport_cost')
           .eq('location_id', myLocation.id).eq('fiscal_year', fy),
         sb.from('misc_expenses').select('amount')
-          .eq('location_id', myLocation.id).eq('fiscal_year', fy)
+          .eq('location_id', myLocation.id).eq('fiscal_year', fy),
+        sb.from('donor_sundays')
+          .select('sunday_date, donors!inner(location_id,fiscal_year)')
+          .eq('donors.location_id', myLocation.id)
+          .eq('donors.fiscal_year', fy)
       ]);
-      const stockC = (se || []).reduce((s,e) => s + (e.qty_bought*(e.buy_price_per_unit||0)) + (e.transport_cost||0), 0);
-      const miscC  = (me || []).reduce((s,e) => s + (e.amount||0), 0);
-      return stockC + miscC;
+      const stockC  = (se || []).reduce((s,e) => s + (e.qty_bought*(e.buy_price_per_unit||0)) + (e.transport_cost||0), 0);
+      const miscC   = (me || []).reduce((s,e) => s + (e.amount||0), 0);
+      // Flower cost: unique Sundays × flower_cost (same logic as P&L card)
+      const uniqueSundays = new Set((ds||[]).map(r => r.sunday_date)).size;
+      const flowerC = uniqueSundays * (myLocation?.flower_cost || 300);
+      return stockC + miscC + flowerC;
     }
 
     const [curInc, prevInc, curExp, prevExp] = await Promise.all([
