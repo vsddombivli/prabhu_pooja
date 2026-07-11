@@ -340,12 +340,7 @@ select.fi{cursor:pointer;}
         </div>
         <div class="card" style="padding:14px;">
           <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Performance distribution</div>
-          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:50%;background:#4a3aa7;display:inline-block;"></span>Exceptional</span>
-            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:50%;background:#1baf7a;display:inline-block;"></span>Very good</span>
-            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:50%;background:#eda100;display:inline-block;"></span>Good</span>
-            <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);"><span style="width:8px;height:8px;border-radius:50%;background:#e34948;display:inline-block;"></span>Poor</span>
-          </div>
+          <div id="perfLegend" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;"></div>
           <div style="position:relative;height:160px;"><canvas id="dashPerfChart" role="img" aria-label="Performance distribution donut">Kids by attendance band.</canvas></div>
         </div>
       </div>
@@ -1548,13 +1543,49 @@ async function renderDashboard() {
   if ($('dashPerfChart')) dashCharts.perf = new Chart($('dashPerfChart'), {
     type: 'doughnut',
     data: {
-      labels:['Exceptional (100%)','Very good (60–99%)','Good (30–59%)','Poor (<30%)'],
+      labels:[
+        `Exceptional (100%) — ${perf.exceptional}`,
+        `Very good (60–99%) — ${perf.verygood}`,
+        `Good (30–59%) — ${perf.good}`,
+        `Poor (<30%) — ${perf.poor}`
+      ],
       datasets:[{ data:[perf.exceptional, perf.verygood, perf.good, perf.poor],
         backgroundColor:['#4a3aa7','#1baf7a','#eda100','#e34948'], borderWidth:2, borderColor:'#fff' }]
     },
     options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${ctx.parsed} kids` } } },
-      cutout:'60%' }
+      plugins:{
+        legend:{ display:false },
+        tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}` } }
+      },
+      cutout:'60%'
+    }
+  });
+  $('perfLegend').innerHTML = [
+    ['#4a3aa7','Exceptional', perf.exceptional],
+    ['#1baf7a','Very good',   perf.verygood],
+    ['#eda100','Good',        perf.good],
+    ['#e34948','Poor',        perf.poor],
+  ].map(([c,l,n]) =>
+    `<span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--gray);">
+      <span style="width:8px;height:8px;border-radius:50%;background:${c};display:inline-block;"></span>
+      ${l} <strong style="color:#1a1a1a;">${n}</strong>
+    </span>`
+  ).join('');
+  // Draw centre total
+  Chart.register({
+    id:'perfCentre',
+    beforeDraw(chart) {
+      if (chart.canvas.id !== 'dashPerfChart') return;
+      const {ctx,chartArea:{top,bottom,left,right}} = chart;
+      const cx = (left+right)/2, cy = (top+bottom)/2;
+      ctx.save();
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle='#1a1a1a'; ctx.font='bold 20px system-ui';
+      ctx.fillText(active.length, cx, cy-6);
+      ctx.fillStyle='#898781'; ctx.font='11px system-ui';
+      ctx.fillText('kids', cx, cy+12);
+      ctx.restore();
+    }
   });
 
   // ── Age groups ────────────────────────────────────
