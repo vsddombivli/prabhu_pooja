@@ -1718,12 +1718,33 @@ async function renderDashboard() {
       },
       options:{
         indexAxis:'y', responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ display:false } },
+        plugins:{ legend:{ display:false },
+          tooltip:{ callbacks:{ label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.x}` } }
+        },
         scales:{
           x:{ grid:{ color:'#e1e0d9' }, ticks:{ color:'#898781', font:{ size:10 } }, border:{ display:false } },
           y:{ grid:{ display:false }, ticks:{ color:'#898781', font:{ size:10 } } }
         }
-      }
+      },
+      plugins:[{
+        id:'stockBarLabels',
+        afterDatasetsDraw(chart) {
+          const {ctx} = chart;
+          chart.data.datasets.forEach((ds, di) => {
+            chart.getDatasetMeta(di).data.forEach((bar, i) => {
+              const val = ds.data[i];
+              if (!val) return;
+              ctx.save();
+              ctx.fillStyle = di===0 ? '#2a78d6' : '#fff';
+              ctx.font = 'bold 9px system-ui';
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(val, bar.x + 4, bar.y);
+              ctx.restore();
+            });
+          });
+        }
+      }]
     });
   } else {
     if ($('dashStockWrap')) $('dashStockWrap').style.display = 'none';
@@ -1810,14 +1831,36 @@ async function renderDashboard() {
       options:{
         responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{ display:false },
-          tooltip:{ callbacks:{ label: ctx => ` ${ctx.dataset.label}: ₹${ctx.parsed.y.toLocaleString('en-IN')}` } } },
+          tooltip:{ callbacks:{ label: ctx => ` ${ctx.dataset.label}: Rs.${ctx.parsed.y.toLocaleString('en-IN')}` } } },
         scales:{
           x:{ grid:{ display:false }, ticks:{ color:'#898781', font:{ size:11 } } },
           y:{ grid:{ color:'#e1e0d9' }, ticks:{ color:'#898781', font:{ size:10 },
-              callback: v => '₹' + (v >= 100000 ? (v/100000).toFixed(1)+'L' : v >= 1000 ? (v/1000).toFixed(0)+'k' : v) },
+              callback: v => 'Rs.' + (v >= 100000 ? (v/100000).toFixed(1)+'L' : v >= 1000 ? (v/1000).toFixed(0)+'k' : v) },
             border:{ display:false } }
         }
-      }
+      },
+      plugins:[{
+        id:'finBarLabels',
+        afterDatasetsDraw(chart) {
+          const {ctx} = chart;
+          chart.data.datasets.forEach((ds, di) => {
+            chart.getDatasetMeta(di).data.forEach((bar, i) => {
+              const val = ds.data[i];
+              if (!val) return;
+              const label = val >= 100000 ? 'Rs.'+(val/100000).toFixed(1)+'L'
+                          : val >= 1000   ? 'Rs.'+(val/1000).toFixed(1)+'k'
+                          : 'Rs.'+val;
+              ctx.save();
+              ctx.fillStyle = di===0 ? '#1baf7a' : '#e34948';
+              ctx.font = 'bold 10px system-ui';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'bottom';
+              ctx.fillText(label, bar.x, bar.y - 3);
+              ctx.restore();
+            });
+          });
+        }
+      }]
     });
   }
 }
@@ -4888,12 +4931,19 @@ function openStockEntryModal(id) {
     $('sePurchaseDate').value = e.purchase_date||TODAY;
     calcStockCost();
   } else {
-    ['seQtyBought','seQtyLeft','seBuyPrice','seTransport','seNotes'].forEach(x=>$(x).value='');
+    ['seQtyBought','seBuyPrice','seTransport','seNotes'].forEach(x=>$(x).value='');
+    $('seQtyLeft').value = '';
     $('seGift').value=''; $('seVendor').value='';
   }
   openModal('stockEntryModal');
 }
-
+function onQtyBoughtChange() {
+  // Auto-fill qty left only when adding new stock (not editing)
+  if (!$('stockEntryId').value) {
+    $('seQtyLeft').value = $('seQtyBought').value;
+  }
+  calcStockCost();
+}
 function calcStockCost() {
   const qty=parseInt($('seQtyBought').value||0), price=parseInt($('seBuyPrice').value||0), trans=parseInt($('seTransport').value||0);
   if(!qty||!price){$('seCostPreview').style.display='none';return;}
@@ -5418,7 +5468,7 @@ async function fetchImageAsDataURL(url) {
       <select class="fi" id="seGift"><option value="">Select gift from gallery…</option></select>
     </div>
     <div class="fi-3">
-      <div class="fg"><label class="fl">Qty bought *</label><input class="fi" type="number" id="seQtyBought" min="1" placeholder="10" oninput="calcStockCost()"/></div>
+      <div class="fg"><label class="fl">Qty bought *</label><input class="fi" type="number" id="seQtyBought" min="1" placeholder="10" oninput="onQtyBoughtChange()"/></div>
       <div class="fg"><label class="fl">Qty left *</label><input class="fi" type="number" id="seQtyLeft" min="0" placeholder="10" oninput="calcStockCost()"/></div>
       <div class="fg"><label class="fl">Purchase date *</label><input class="fi" type="date" id="sePurchaseDate"/></div>
     </div>
