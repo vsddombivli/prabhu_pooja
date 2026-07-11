@@ -1511,18 +1511,40 @@ async function renderDashboard() {
     data: {
       labels: months6.map(x => x.label),
       datasets: [
-        { label:'Present', data: months6.map(x => x.sessions), backgroundColor:'#2a78d6', borderRadius:4, barPercentage:0.65 },
+        { label:'Sessions', data: months6.map(x => x.sessions), backgroundColor:'#2a78d6', borderRadius:4, barPercentage:0.65 },
         { label:'Absent',   data: months6.map(x => x.absent),   backgroundColor:'#e1e0d9', borderRadius:4, barPercentage:0.65 }
       ]
     },
     options: {
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ display:false } },
+      plugins:{
+        legend:{ display:false },
+        tooltip:{ callbacks:{ label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}` } }
+      },
       scales:{
         x:{ grid:{ display:false }, ticks:{ color:'#898781', font:{ size:10 } } },
         y:{ grid:{ color:'#e1e0d9' }, ticks:{ color:'#898781', font:{ size:10 } }, border:{ display:false } }
       }
-    }
+    },
+    plugins:[{
+      id:'barLabels',
+      afterDatasetsDraw(chart) {
+        const {ctx} = chart;
+        chart.data.datasets.forEach((ds, di) => {
+          chart.getDatasetMeta(di).data.forEach((bar, i) => {
+            const val = ds.data[i];
+            if (!val) return;
+            ctx.save();
+            ctx.fillStyle = di===0 ? '#2a78d6' : '#898781';
+            ctx.font = 'bold 9px system-ui';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(val, bar.x, bar.y - 2);
+            ctx.restore();
+          });
+        });
+      }
+    }]
   });
 
   // ── Performance distribution ──────────────────────
@@ -1599,19 +1621,28 @@ async function renderDashboard() {
     else              ageGroups['17+']++;
   });
   destroyDashChart('age');
+  const ageLabels = Object.entries(ageGroups).map(([k,v]) => `${k}  (${v})`);
   if ($('dashAgeChart')) dashCharts.age = new Chart($('dashAgeChart'), {
     type: 'pie',
     data: {
-      labels: Object.keys(ageGroups),
+      labels: ageLabels,
       datasets:[{ data: Object.values(ageGroups),
         backgroundColor:['#2a78d6','#1baf7a','#eda100','#4a3aa7'], borderWidth:2, borderColor:'#fff' }]
     },
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ display:true, position:'right',
-        labels:{ font:{ size:10 }, color:'#52514e', boxWidth:10, padding:8 } } } }
+        labels:{ font:{ size:10 }, color:'#52514e', boxWidth:10, padding:8,
+          generateLabels(chart) {
+            return chart.data.labels.map((label,i) => ({
+              text: label,
+              fillStyle: chart.data.datasets[0].backgroundColor[i],
+              hidden: false, index: i
+            }));
+          }
+        } } } }
   });
 
-  // ── Gender ratio ──────────────────────────────────
+  // ── Gender ratio ─────  ─────────────────────────────
   const gender = { Male:0, Female:0, Other:0 };
   active.forEach(k => {
     const g = (k.gender || 'other').toLowerCase();
@@ -1621,10 +1652,11 @@ async function renderDashboard() {
   });
   if (gender.Other === 0) delete gender.Other;
   destroyDashChart('gender');
+  const genderLabels = Object.entries(gender).map(([k,v]) => `${k}  (${v})`);
   if ($('dashGenderChart')) dashCharts.gender = new Chart($('dashGenderChart'), {
     type: 'doughnut',
     data: {
-      labels: Object.keys(gender),
+      labels: genderLabels,
       datasets:[{ data: Object.values(gender),
         backgroundColor:['#2a78d6','#e87ba4','#73726c'], borderWidth:2, borderColor:'#fff' }]
     },
