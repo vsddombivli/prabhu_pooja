@@ -2635,12 +2635,27 @@ async function openQRScanner() {
   $('qrScanStatus').textContent = 'Starting camera…';
   $('qrScanStatus').style.background = 'rgba(0,0,0,.6)';
   try {
+    // High resolution for small QR detection
     qrStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+      video: {
+        facingMode  : 'environment',
+        width       : { ideal: 1280, min: 640 },
+        height      : { ideal: 720,  min: 480 },
+        focusMode   : 'continuous',      // auto-focus
+        zoom        : 1,
+      }
     });
     const video = $('qrVideo');
     video.srcObject = qrStream;
     video.play();
+
+    // Enable torch if available (helps with small QR in low light)
+    try {
+      const track = qrStream.getVideoTracks()[0];
+      const caps  = track.getCapabilities();
+      if (caps.torch) await track.applyConstraints({ advanced:[{ torch: true }] });
+    } catch(e) { /* torch not available — ignore */ }
+
     video.onloadedmetadata = () => scanQRFrame();
     $('qrScanStatus').textContent = 'Point camera at QR code';
   } catch(e) {
@@ -2663,12 +2678,32 @@ function scanQRFrame() {
   if (video.readyState !== video.HAVE_ENOUGH_DATA) {
     qrAnimFrame = requestAnimationFrame(scanQRFrame); return;
   }
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+
+  // Strategy 1: scan centre crop (faster, better for small QRs in frame centre)
+  // Crop middle 60% of frame — where user naturally holds the QR
+  const cropSize = Math.min(vw, vh) * 0.6;
+  const cropX    = (vw - cropSize) / 2;
+  const cropY    = (vh - cropSize) / 2;
+
+  canvas.width  = cropSize;
+  canvas.height = cropSize;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(video, cropX, cropY, cropSize, cropSize, 0, 0, cropSize, cropSize);
+  let imageData = ctx.getImageData(0, 0, cropSize, cropSize);
+  let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+
+  // Strategy 2: if centre crop misses, scan full frame
+  if (!code) {
+    canvas.width  = vw;
+    canvas.height = vh;
+    ctx.drawImage(video, 0, 0, vw, vh);
+    imageData = ctx.getImageData(0, 0, vw, vh);
+    code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+  }
+
   if (code && code.data && code.data !== qrLastScan) {
     qrLastScan = code.data;
     handleQRScan(code.data);
@@ -2677,6 +2712,16 @@ function scanQRFrame() {
   }
 }
 
+function speakQR(msg) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel(); // stop any ongoing speech
+  const utt = new SpeechSynthesisUtterance(msg);
+  utt.lang   = 'en-IN';
+  utt.rate   = 1.1;
+  utt.volume = 1;
+  window.speechSynthesis.speak(utt);
+}
+  
 async function handleQRScan(qrData) {
   // Check event day first
   const eventDay  = myLocation?.event_day ?? 0;
@@ -2685,6 +2730,7 @@ async function handleQRScan(qrData) {
   if (todayDay !== eventDay) {
     $('qrScanStatus').textContent = '⛔ Attendance only on ' + dayNames[eventDay] + 's';
     $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
+    speakQR('Attendance is only allowed on ' + dayNames[eventDay]);
     setTimeout(() => {
       qrLastScan = '';
       $('qrScanStatus').textContent = 'Point camera at QR code';
@@ -2702,6 +2748,7 @@ async function handleQRScan(qrData) {
   if (!kid) {
     $('qrScanStatus').textContent = '❌ Unknown QR — not registered here';
     $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
+    speakQR('QR code not found. Kid not registered at this location.');
     setTimeout(() => {
       qrLastScan = '';
       $('qrScanStatus').textContent = 'Point camera at QR code';
@@ -2715,6 +2762,7 @@ async function handleQRScan(qrData) {
   if (attendance[kid.id]) {
     $('qrScanStatus').textContent = `✅ ${kid.full_name} — already marked today`;
     $('qrScanStatus').style.background = 'rgba(26,130,115,.85)';
+    speakQR('Attendance already marked for ' + kid.full_name);
     toast(`${kid.full_name} — already marked ✓`);
     // Stay open — reset and resume scanning after 1.5s
     setTimeout(() => {
@@ -2738,6 +2786,7 @@ async function handleQRScan(qrData) {
   if (error) {
     $('qrScanStatus').textContent = '❌ Error: ' + error.message;
     $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
+    speakQR('Error saving attendance. Please try again.');
     setTimeout(() => {
       qrLastScan = '';
       $('qrScanStatus').textContent = 'Point camera at QR code';
@@ -2759,6 +2808,7 @@ async function handleQRScan(qrData) {
 
   $('qrScanStatus').textContent = `🎉 ${kid.full_name} — marked present!`;
   $('qrScanStatus').style.background = 'rgba(27,175,122,.9)';
+  speakQR('Attendance marked for ' + kid.full_name);
   toast(`✓ ${kid.full_name} marked present`);
   renderAttList();
 
