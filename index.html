@@ -2107,6 +2107,9 @@ function renderKidList() {
     if (el.id === 'genQRPdfBtn') return; // handled separately
     el.style.display = isVol ? 'none' : '';
   });
+  // Hide select-all checkbox and bulk bar from volunteer
+  if ($('kidSelectAll')) $('kidSelectAll').style.display = isVol ? 'none' : '';
+  if ($('kidBulkBar'))   $('kidBulkBar').style.display   = 'none';
   if ($('genQRPdfBtn')) $('genQRPdfBtn').style.display = (role === 'admin' || role === 'superadmin') ? '' : 'none';
   $('kidTbody').innerHTML = list.length
     ? list.map(k => {
@@ -2140,6 +2143,10 @@ function renderKidList() {
     : `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--gray);">No kids found.</td></tr>`;
 }
 function onKidCheck() {
+  if (role === 'volunteer') {
+    document.querySelectorAll('.kid-chk').forEach(c => c.checked = false);
+    return;
+  }
   const all   = [...document.querySelectorAll('.kid-chk')];
   const checked = all.filter(c => c.checked);
   const bar   = $('kidBulkBar');
