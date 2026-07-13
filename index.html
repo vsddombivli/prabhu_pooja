@@ -2648,14 +2648,7 @@ async function openQRScanner() {
     const video = $('qrVideo');
     video.srcObject = qrStream;
     video.play();
-
-    // Enable torch if available (helps with small QR in low light)
-    /* try { 
-      const track = qrStream.getVideoTracks()[0];
-      const caps  = track.getCapabilities();
-      if (caps.torch) await track.applyConstraints({ advanced:[{ torch: true }] });
-    } catch(e) { /* torch not available — ignore */ }
-    */
+    
     video.onloadedmetadata = () => scanQRFrame();
     $('qrScanStatus').textContent = 'Point camera at QR code';
   } catch(e) {
