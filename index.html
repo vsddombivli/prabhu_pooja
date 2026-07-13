@@ -478,7 +478,7 @@ select.fi{cursor:pointer;}
         </div>
         <table class="tbl" id="kidTable">
           <thead><tr>
-            <th style="width:36px;"><input type="checkbox" id="kidSelectAll" onclick="toggleSelectAllKids(this)" title="Select all"/></th>
+            <th style="width:36px;" id="kidSelectAllTh"><input type="checkbox" id="kidSelectAll" onclick="toggleSelectAllKids(this)" title="Select all"/></th>
             <th style="width:40px;"></th>
             <th>ID</th><th>Name</th><th>Age</th><th>Gender</th><th>Points</th><th>Status</th>
           </tr></thead>
@@ -2107,9 +2107,11 @@ function renderKidList() {
     if (el.id === 'genQRPdfBtn') return; // handled separately
     el.style.display = isVol ? 'none' : '';
   });
-  // Hide select-all checkbox and bulk bar from volunteer
-  if ($('kidSelectAll')) $('kidSelectAll').style.display = isVol ? 'none' : '';
-  if ($('kidBulkBar'))   $('kidBulkBar').style.display   = 'none';
+  // Hide entire checkbox column from volunteer
+  if ($('kidSelectAllTh')) $('kidSelectAllTh').style.display = isVol ? 'none' : '';
+  if ($('kidBulkBar'))     $('kidBulkBar').style.display     = 'none';
+  // Hide checkbox cells in each row
+  document.querySelectorAll('.kid-chk-td').forEach(td => td.style.display = isVol ? 'none' : '');
   if ($('genQRPdfBtn')) $('genQRPdfBtn').style.display = (role === 'admin' || role === 'superadmin') ? '' : 'none';
   $('kidTbody').innerHTML = list.length
     ? list.map(k => {
@@ -2125,7 +2127,7 @@ function renderKidList() {
              </div>`
           : `<div class="av" style="background:${c.bg};color:${c.fg};font-size:11px;cursor:pointer;" onclick="uploadKidPhoto('${k.id}')" title="Add photo">${ini(k.full_name)}</div>`;
         return `<tr class="${k.is_active?'':'age-warn'}">
-          <td><input type="checkbox" class="kid-chk" data-id="${k.id}" onclick="onKidCheck()"/></td>
+          <td class="kid-chk-td"><input type="checkbox" class="kid-chk" data-id="${k.id}" onclick="onKidCheck()"/></td>
           <td>
             <div style="display:flex;gap:4px;align-items:center;">
               ${role!=='volunteer'?`<button onclick="openKidModal('${k.id}')" title="Edit" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px;">✏️</button>`:''}
