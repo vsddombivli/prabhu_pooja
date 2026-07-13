@@ -933,7 +933,12 @@ select.fi{cursor:pointer;}
     </div>
     <div class="fg">
       <label class="fl">Sunday dates (pick dates for this donor)</label>
-      <input class="fi" type="date" id="dSundayPicker" onchange="addSundayChip()"/>
+      <div style="display:flex;gap:8px;">
+        <input class="fi" type="text" id="dSundayPicker" placeholder="dd/mm/yyyy" maxlength="10"
+          oninput="fmtDateInput(this,'dSundayPickerISO')" inputmode="numeric" style="max-width:160px;"/>
+        <input type="hidden" id="dSundayPickerISO"/>
+        <button type="button" class="btn btn-gray" style="padding:8px 12px;font-size:13px;" onclick="addSundayChip()">+ Add</button>
+      </div>
       <div class="chip-input-wrap" id="sundayChips" style="margin-top:6px;"></div>
     </div>
     <div class="fg"><label class="fl">Financial year</label>
@@ -2096,6 +2101,12 @@ function renderKidList() {
   });
 
   if (!$('kidTbody')) return;
+  // Hide admin-only toolbar buttons from volunteer
+  const isVol = role === 'volunteer';
+  document.querySelectorAll('#kidToolbar button, #kidToolbar label').forEach(el => {
+    if (el.id === 'genQRPdfBtn') return; // handled separately
+    el.style.display = isVol ? 'none' : '';
+  });
   if ($('genQRPdfBtn')) $('genQRPdfBtn').style.display = (role === 'admin' || role === 'superadmin') ? '' : 'none';
   $('kidTbody').innerHTML = list.length
     ? list.map(k => {
@@ -2114,7 +2125,7 @@ function renderKidList() {
           <td><input type="checkbox" class="kid-chk" data-id="${k.id}" onclick="onKidCheck()"/></td>
           <td>
             <div style="display:flex;gap:4px;align-items:center;">
-              <button onclick="openKidModal('${k.id}')" title="Edit" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px;">✏️</button>
+              ${role!=='volunteer'?`<button onclick="openKidModal('${k.id}')" title="Edit" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px;">✏️</button>`:''}
               ${role!=='volunteer'?`<button onclick="deleteKid('${k.id}')" title="Delete" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px;">🗑️</button>`:''}
             </div>
           </td>
@@ -4114,7 +4125,8 @@ function calcDonorAmount() {
 }
 
 function addSundayChip() {
-  const val = $('dSundayPicker').value;
+  const val = $('dSundayPickerISO').value;
+  if (!val) { toast('Enter a valid date in dd/mm/yyyy format'); return; }
   if (!val) return;
 
   // Get event day for current location (default 0 = Sunday)
@@ -4133,6 +4145,7 @@ function addSundayChip() {
   selectedSundays.sort();
   renderSundayChips();
   $('dSundayPicker').value = '';
+  $('dSundayPickerISO').value = '';
 }
 
 function removeSundayChip(date) {
@@ -4263,18 +4276,17 @@ async function saveSundayNote() {
   toast('Note saved');
 }
 
-function fmtDateInput(inp) {
-  // Auto-format as dd/mm/yyyy while typing
+function fmtDateInput(inp, targetId) {
   let v = inp.value.replace(/\D/g, '');
   if (v.length >= 3) v = v.slice(0,2) + '/' + v.slice(2);
   if (v.length >= 6) v = v.slice(0,5) + '/' + v.slice(5,9);
   inp.value = v;
-  // Write ISO to hidden field
+  const hiddenId = targetId || 'payDateISO';
   const parts = v.split('/');
   if (parts.length === 3 && parts[2].length === 4) {
-    $('payDateISO').value = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+    if ($(hiddenId)) $(hiddenId).value = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
   } else {
-    $('payDateISO').value = '';
+    if ($(hiddenId)) $(hiddenId).value = '';
   }
 }
 
