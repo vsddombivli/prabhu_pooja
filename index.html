@@ -3874,15 +3874,18 @@ function renderDonorList() {
   el.innerHTML = list.map(d => {
     const payments  = donorPayments[d.id]  || [];
     const sundays   = donorSundays[d.id]   || [];
-    const totalPaid = payments.reduce((s,p) => s + (p.amount||0), 0);
-    const balance   = (d.amount||0) - totalPaid;
-    const pct       = d.amount ? Math.round(totalPaid / d.amount * 100) : 0;
+    const totalPaid  = payments.reduce((s,p) => s + (p.amount||0), 0);
+    const balance    = (d.amount||0) - totalPaid;
+    const pct        = d.amount ? Math.round(totalPaid / d.amount * 100) : 0;
+    // Recalculate status from actual payments — don't trust stored value
+    const calcStatus = totalPaid >= (d.amount||0) && (d.amount||0) > 0 ? 'paid'
+                     : totalPaid > 0 ? 'partial' : 'unpaid';
 
-    const statusBadge = d.paid_status === 'paid'
-      ? '<span class="badge badge-green">✓ Paid</span>'
-      : d.paid_status === 'partial'
-        ? '<span class="badge badge-amber">Partial</span>'
-        : '<span class="badge badge-red">Unpaid</span>';
+    const statusBadge = calcStatus === 'paid'
+      ? '<span class="tag tag-green">✓ Paid</span>'
+      : calcStatus === 'partial'
+      ? '<span class="tag tag-amber">~ Partial</span>'
+      : '<span class="tag tag-red">Unpaid</span>';
 
     const assigned   = sundays.length;
     const expected   = d.num_sundays || 0;
@@ -3929,7 +3932,7 @@ function renderDonorList() {
           ${role !== 'volunteer' ? `
           <button class="btn btn-gray" style="padding:4px 10px;font-size:12px;" onclick="openDonorModal('${d.id}')">Edit</button>
           <button class="btn btn-red"  style="padding:4px 10px;font-size:12px;" onclick="deleteDonor('${d.id}')">Del</button>` : ''}
-          ${d.paid_status === 'paid' ? `
+          ${calcStatus === 'paid' ? `
           <button class="btn btn-blue" style="padding:4px 10px;font-size:12px;background:var(--bl);color:var(--blue);border:1px solid var(--blue);" onclick="sendDonorReceipt('${d.id}')">🧾 Receipt</button>` : ''}
         </div>
       </div>
@@ -4202,6 +4205,7 @@ async function saveDonor() {
     fiscal_year  : fy,
     is_active    : true,
     created_by   : me.id,
+    ...(id ? {} : { paid_status: 'unpaid' }), // always start as unpaid on creation
   };
 
   let donorId = id;
