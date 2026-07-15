@@ -402,6 +402,12 @@ select.fi{cursor:pointer;}
         </div>
       </div>
 
+      <!-- Upcoming Sundays with donors -->
+      <div class="card" style="margin-bottom:12px;">
+        <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:12px;text-transform:uppercase;letter-spacing:.04em;">📅 Upcoming Sundays</div>
+        <div id="dashUpcomingSundays"><div style="color:var(--gray);font-size:13px;">Loading…</div></div>
+      </div>
+
     </div>
 
     <!-- ── ATTENDANCE ── -->
@@ -613,8 +619,14 @@ select.fi{cursor:pointer;}
           Select date range — only event days within range will appear as columns. Each row = one kid.
         </div>
         <div class="fi-2" style="margin-bottom:10px;">
-          <div class="fg"><label class="fl">From date</label><input class="fi" type="date" id="rptAttFrom"/></div>
-          <div class="fg"><label class="fl">To date</label><input class="fi" type="date" id="rptAttTo"/></div>
+          <div class="fg"><label class="fl">From date</label>
+            <input class="fi" type="text" id="rptAttFrom" placeholder="dd/mm/yyyy" maxlength="10" oninput="fmtDateInput(this,'rptAttFromISO')" inputmode="numeric"/>
+            <input type="hidden" id="rptAttFromISO"/>
+          </div>
+          <div class="fg"><label class="fl">To date</label>
+            <input class="fi" type="text" id="rptAttTo" placeholder="dd/mm/yyyy" maxlength="10" oninput="fmtDateInput(this,'rptAttToISO')" inputmode="numeric"/>
+            <input type="hidden" id="rptAttToISO"/>
+          </div>
         </div>
         <button class="btn btn-green" onclick="exportAttReport()">⬇ Download attendance Excel</button>
       </div>
@@ -935,7 +947,7 @@ select.fi{cursor:pointer;}
     <div class="fg">
       <label class="fl">Sunday dates (pick dates for this donor)</label>
       <div style="display:flex;gap:8px;">
-        <input class="fi" type="text" id="dSundayPicker" placeholder="dd/mm/yyyy" maxlength="10"
+        <input class="fi" type="date" id="dSundayPicker" placeholder="dd/mm/yyyy" maxlength="10"
           oninput="fmtDateInput(this,'dSundayPickerISO')" inputmode="numeric" style="max-width:160px;"/>
         <input type="hidden" id="dSundayPickerISO"/>
         <button type="button" class="btn btn-gray" style="padding:8px 12px;font-size:13px;" onclick="addSundayChip()">+ Add</button>
@@ -1893,6 +1905,63 @@ async function renderDashboard() {
       }]
     });
   }
+  
+  // ── Upcoming 3 Sundays with donors ───────────────
+  const eventDay2   = myLocation?.event_day ?? 0;
+  const upcoming    = [];
+  const checkDate   = new Date();
+  checkDate.setDate(checkDate.getDate() + 1); // start from tomorrow
+  while (upcoming.length < 3) {
+    if (checkDate.getDay() === eventDay2) {
+      upcoming.push(checkDate.toISOString().split('T')[0]);
+    }
+    checkDate.setDate(checkDate.getDate() + 1);
+    if (upcoming.length >= 3 && checkDate.getDay() !== eventDay2) break;
+    if (checkDate > new Date(new Date().setMonth(new Date().getMonth() + 6))) break;
+  }
+
+  const upEl = $('dashUpcomingSundays');
+  if (!upEl) return;
+
+  if (!upcoming.length) {
+    upEl.innerHTML = '<div style="color:var(--gray);font-size:13px;">No upcoming event days found.</div>';
+    return;
+  }
+
+  // Match donors to each upcoming Sunday from donorSundays
+  upEl.innerHTML = upcoming.map(date => {
+    const label = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+    // Find all donors who have this sunday date assigned
+    const donorsOnDay = [];
+    donors.forEach(d => {
+      const hasSunday = (donorSundays[d.id] || []).some(s => s.sunday_date === date);
+      if (hasSunday) donorsOnDay.push(d);
+    });
+
+    const donorRows = donorsOnDay.length
+      ? donorsOnDay.map(d => {
+          const giftBadge = d.gift_source === 'self'
+            ? '<span class="badge badge-blue" style="font-size:10px;">Donor gift</span>'
+            : '<span class="badge badge-green" style="font-size:10px;">Temple gift</span>';
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+            <div>
+              <div style="font-size:13px;font-weight:600;">${d.full_name}</div>
+              <div style="font-size:11px;color:var(--gray);">${d.mobile}</div>
+            </div>
+            ${giftBadge}
+          </div>`;
+        }).join('')
+      : '<div style="font-size:12px;color:var(--gray);padding:6px 0;">No donors scheduled</div>';
+
+    return `<div style="margin-bottom:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div style="font-size:13px;font-weight:700;color:var(--blue);">📅 ${label}</div>
+        ${donorsOnDay.length ? `<span class="badge badge-blue">${donorsOnDay.length} donor${donorsOnDay.length>1?'s':''}</span>` : ''}
+      </div>
+      ${donorRows}
+    </div>`;
+  }).join('<hr style="border:none;border-top:1px solid var(--border);margin:8px 0;"/>');
 }
 
 // ═══════════════════════════════════════════════════
@@ -5433,14 +5502,19 @@ function renderReports() {
   });
   // Default date range: current month
   const now = new Date();
-  if ($('rptAttFrom')) $('rptAttFrom').value = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  if ($('rptAttTo'))   $('rptAttTo').value   = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  const fromISO = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const toISO   = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  if ($('rptAttFrom'))    $('rptAttFrom').value    = toDisplayDate(fromISO);
+  if ($('rptAttFromISO')) $('rptAttFromISO').value = fromISO;
+  if ($('rptAttTo'))      $('rptAttTo').value      = toDisplayDate(toISO);
+  if ($('rptAttToISO'))   $('rptAttToISO').value   = toISO;
 }
 
 // ── Attendance report ─────────────────────────────
 async function exportAttReport() {
-  const from = $('rptAttFrom').value;
-  const to   = $('rptAttTo').value;
+  const from = $('rptAttFromISO').value;
+  const to   = $('rptAttToISO').value;
+  if (!from || !to) { toast('Enter valid dates in dd/mm/yyyy format'); return; }
   if (!from || !to) { toast('Select from and to dates'); return; }
   if (from > to)    { toast('From date must be before to date'); return; }
 
