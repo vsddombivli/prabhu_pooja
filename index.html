@@ -5402,13 +5402,16 @@ function _renderStockFinance() {
     </div>`;
 }
 function filterSeGifts() {
-  const catId      = $('seCatFilter')?.value || '';
+  const catId        = $('seCatFilter')?.value || '';
   const notGivenOnly = $('seNotGivenOnly')?.checked || false;
-  const currentVal = $('seGift').value;
+  const srch         = ($('seGiftSearch')?.value || '').toLowerCase();
+  const currentVal   = $('seGift').value;
 
   const filtered = gifts.filter(g => {
     if (catId && g.category_id !== catId) return false;
     if (notGivenOnly && giftStockSet.has(g.id)) return false;
+    if (srch && !(g.name||'').toLowerCase().includes(srch) &&
+                !(g.gift_categories?.name||'').toLowerCase().includes(srch)) return false;
     return true;
   }).sort((a,b) => (a.gift_categories?.name||'').localeCompare(b.gift_categories?.name||'') || (a.name||'').localeCompare(b.name||''));
 
@@ -5433,6 +5436,7 @@ function openStockEntryModal(id) {
   $('seCatFilter').innerHTML = '<option value="">All categories</option>' +
     [...catSet.entries()].sort((a,b) => a[1].localeCompare(b[1])).map(([id,name]) => `<option value="${id}">${name}</option>`).join('');
   $('seNotGivenOnly').checked = false;
+  if ($('seGiftSearch')) $('seGiftSearch').value = '';
   filterSeGifts();
   $('seVendor').innerHTML = '<option value="">— None / walk-in —</option>' +
     vendors.map(v => `<option value="${v.id}">${v.name} · ${v.mobile}</option>`).join('');
@@ -6023,7 +6027,8 @@ async function fetchImageAsDataURL(url) {
       </label>
     </div>
     <div class="fg"><label class="fl">Gift *</label>
-      <select class="fi" id="seGift"><option value="">Select gift from gallery…</option></select>
+      <input class="fi" type="text" id="seGiftSearch" placeholder="Type to search gifts…" oninput="filterSeGifts()" style="margin-bottom:4px;"/>
+      <select class="fi" id="seGift" size="5" style="height:auto;"></select>
     </div>
     <div class="fi-3">
       <div class="fg"><label class="fl">Qty bought *</label><input class="fi" type="number" id="seQtyBought" min="1" placeholder="10" oninput="onQtyBoughtChange()"/></div>
