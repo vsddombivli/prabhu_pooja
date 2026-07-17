@@ -5122,33 +5122,65 @@ function renderVendorList() {
   const el = $('vendorListContainer'); if (!el) return;
   el.innerHTML = '<div style="color:var(--gray);font-size:13px;padding:8px 0;">Loading...</div>';
   (async () => {
-    const { data } = await sb.from('vendors').select('*').order('name');
-    vendors = data || [];
+    const [{ data: vData }, { data: seData }] = await Promise.all([
+      sb.from('vendors').select('*').order('name'),
+      sb.from('gift_stock_entries')
+        .select('vendor_id, fiscal_year, qty_bought, buy_price_per_unit, transport_cost')
+        .eq('location_id', myLocation.id)
+    ]);
+    vendors = vData || [];
+
+    // Build vendor purchase totals: { vendor_id: { fy: { amount, items } } }
+    const vendorTotals = {};
+    (seData || []).forEach(e => {
+      if (!e.vendor_id) return;
+      const amt = (e.qty_bought * (e.buy_price_per_unit||0)) + (e.transport_cost||0);
+      if (!vendorTotals[e.vendor_id]) vendorTotals[e.vendor_id] = {};
+      if (!vendorTotals[e.vendor_id][e.fiscal_year]) vendorTotals[e.vendor_id][e.fiscal_year] = { amount:0, items:0 };
+      vendorTotals[e.vendor_id][e.fiscal_year].amount += amt;
+      vendorTotals[e.vendor_id][e.fiscal_year].items++;
+    });
+
     if (!vendors.length) { el.innerHTML = '<div style="color:var(--gray);font-size:13px;padding:16px 0;">No vendors yet.</div>'; return; }
-    el.innerHTML = vendors.map(v =>
-      '<div class="vendor-card">' +
+
+    el.innerHTML = vendors.map(v => {
+      const totals = vendorTotals[v.id] || {};
+      const fyRows = Object.entries(totals)
+        .sort((a,b) => b[0].localeCompare(a[0]))
+        .map(([fy, t]) =>
+          `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);">
+            <span style="color:var(--gray);">FY ${fy} (${t.items} purchase${t.items>1?'s':''})</span>
+            <strong style="color:var(--blue);">Rs.${t.amount.toLocaleString('en-IN')}</strong>
+          </div>`
+        ).join('');
+      const totalAll = Object.values(totals).reduce((s,t) => s+t.amount, 0);
+
+      return '<div class="vendor-card">' +
         '<div class="vendor-av">&#127978;</div>' +
-        '<div class="vendor-info">' +
+        '<div class="vendor-info" style="flex:1;">' +
           '<div class="vendor-name">' + v.name + '</div>' +
           (v.contact_person ? '<div class="vendor-meta">&#128100; ' + v.contact_person + '</div>' : '') +
           '<div class="vendor-meta">&#128222; <a href="tel:' + v.mobile + '" style="color:var(--blue);text-decoration:none;">' + v.mobile + '</a>' + (v.mobile2 ? ' / <a href="tel:' + v.mobile2 + '" style="color:var(--blue);text-decoration:none;">' + v.mobile2 + '</a>' : '') + '</div>' +
           (v.address ? '<div class="vendor-meta">&#128205; ' + v.address + '</div>' : '') +
           (v.notes   ? '<div class="vendor-meta" style="font-style:italic;margin-top:4px;">' + v.notes + '</div>' : '') +
+          (fyRows ? `<div style="margin-top:8px;padding:8px;background:var(--bl);border-radius:var(--r);">
+            <div style="font-size:11px;font-weight:600;color:var(--gray);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Purchase history</div>
+            ${fyRows}
+            <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-top:4px;margin-top:2px;">
+              <span>Total all time</span>
+              <span style="color:var(--green);">Rs.${totalAll.toLocaleString('en-IN')}</span>
+            </div>
+          </div>` : '<div style="font-size:11px;color:var(--gray);margin-top:6px;">No purchases recorded yet.</div>') +
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;">' +
           '<button class="btn btn-gray vendor-edit-btn" style="padding:4px 10px;font-size:12px;" data-vendor-id="' + v.id + '">Edit</button>' +
           '<button class="btn btn-red vendor-delete-btn" style="padding:4px 10px;font-size:12px;" data-vendor-id="' + v.id + '">Del</button>' +
         '</div>' +
-      '</div>'
-    ).join('');
-    
-    // Attach event listeners for edit and delete buttons
-    el.querySelectorAll('.vendor-edit-btn').forEach(btn => {
-      btn.onclick = () => openVendorModal(btn.dataset.vendorId);
-    });
-    el.querySelectorAll('.vendor-delete-btn').forEach(btn => {
-      btn.onclick = () => deleteVendor(btn.dataset.vendorId);
-    });
+      '</div>';
+    }).join('');
+
+    el.querySelectorAll('.vendor-edit-btn').forEach(btn => { btn.onclick = () => openVendorModal(btn.dataset.vendorId); });
+    el.querySelectorAll('.vendor-delete-btn').forEach(btn => { btn.onclick = () => deleteVendor(btn.dataset.vendorId); });
   })();
 }
 
@@ -5369,14 +5401,39 @@ function _renderStockFinance() {
       </span>
     </div>`;
 }
+function filterSeGifts() {
+  const catId      = $('seCatFilter')?.value || '';
+  const notGivenOnly = $('seNotGivenOnly')?.checked || false;
+  const currentVal = $('seGift').value;
 
+  const filtered = gifts.filter(g => {
+    if (catId && g.category_id !== catId) return false;
+    if (notGivenOnly && giftStockSet.has(g.id)) return false;
+    return true;
+  }).sort((a,b) => (a.gift_categories?.name||'').localeCompare(b.gift_categories?.name||'') || (a.name||'').localeCompare(b.name||''));
+
+  $('seGift').innerHTML = '<option value="">Select gift from gallery…</option>' +
+    filtered.map(g => {
+      const cat   = g.gift_categories?.name ? `[${g.gift_categories.name}] ` : '';
+      const stock = giftStockSet.has(g.id) ? ' ✓' : '';
+      return `<option value="${g.id}">${cat}${g.name} — Rs.${(g.mrp||0).toLocaleString('en-IN')}${stock}</option>`;
+    }).join('');
+
+  // Restore previous selection if still in filtered list
+  if (currentVal) $('seGift').value = currentVal;
+}
 // ── Stock entry modal
 function openStockEntryModal(id) {
   $('stockEntryId').value = id||'';
   $('stockEntryModalTitle').textContent = id ? 'Edit stock purchase' : 'Add stock purchase';
   hideErr('seErr'); $('seCostPreview').style.display='none';
-  $('seGift').innerHTML = '<option value="">Select gift from gallery…</option>' +
-    gifts.map(g => `<option value="${g.id}">${g.name} (MRP ₹${(g.mrp||0).toLocaleString('en-IN')})</option>`).join('');
+  // Populate category filter
+  const catSet = new Map();
+  gifts.forEach(g => { if (g.category_id && g.gift_categories?.name) catSet.set(g.category_id, g.gift_categories.name); });
+  $('seCatFilter').innerHTML = '<option value="">All categories</option>' +
+    [...catSet.entries()].sort((a,b) => a[1].localeCompare(b[1])).map(([id,name]) => `<option value="${id}">${name}</option>`).join('');
+  $('seNotGivenOnly').checked = false;
+  filterSeGifts();
   $('seVendor').innerHTML = '<option value="">— None / walk-in —</option>' +
     vendors.map(v => `<option value="${v.id}">${v.name} · ${v.mobile}</option>`).join('');
   $('sePurchaseDate').value = TODAY;
@@ -5955,6 +6012,16 @@ async function fetchImageAsDataURL(url) {
   </div>
   <div class="modal-body">
     <input type="hidden" id="stockEntryId"/>
+    <div class="fg"><label class="fl">Filter by category</label>
+      <select class="fi" id="seCatFilter" onchange="filterSeGifts()">
+        <option value="">All categories</option>
+      </select>
+    </div>
+    <div class="fg" style="display:flex;gap:12px;align-items:center;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="seNotGivenOnly" onchange="filterSeGifts()"/> Not given here yet only
+      </label>
+    </div>
     <div class="fg"><label class="fl">Gift *</label>
       <select class="fi" id="seGift"><option value="">Select gift from gallery…</option></select>
     </div>
