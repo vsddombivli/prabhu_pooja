@@ -1559,6 +1559,11 @@ async function renderDashboard() {
     cursor.setDate(cursor.getDate() + 1);
   }
 
+  // If allKidAtt is empty, reload it first
+  if (!Object.keys(allKidAtt).length && sb && myLocation) {
+    await loadRecentAttendance();
+  }
+  
   // For each event day get attendance count
   const trendData = eventDaysInMonth.map(d => {
     const dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
