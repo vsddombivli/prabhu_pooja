@@ -1074,7 +1074,7 @@ let allKidAtt  = {};     // { kid_id: [attendance rows] } last 2 months
 let attFilter = 'all';
 let kidFilter = 'all';
 
-const TODAY = new Date().toISOString().split('T')[0];
+const TODAY = localDateStr();
 
 // ═══════════════════════════════════════════════════
 // UTILS
@@ -1144,16 +1144,18 @@ function compressImage(file, maxBytes = 25 * 1024) {
   });
 }
 function lastNEventDays(n) {
-  // Returns last n event days (based on location event_day) as date strings
   const eventDay = myLocation?.event_day ?? 0;
   const days = [];
   const d = new Date();
-  // Walk backwards up to 180 days to find n event days
   for (let i = 0; i < 180 && days.length < n; i++) {
     const check = new Date(d);
     check.setDate(d.getDate() - i);
     if (check.getDay() === eventDay) {
-      days.unshift(check.toISOString().split('T')[0]);
+      // Use local date to avoid UTC timezone shift (critical for IST users)
+      const yyyy = check.getFullYear();
+      const mm   = String(check.getMonth() + 1).padStart(2, '0');
+      const dd   = String(check.getDate()).padStart(2, '0');
+      days.unshift(`${yyyy}-${mm}-${dd}`);
     }
   }
   return days;
@@ -1559,7 +1561,7 @@ async function renderDashboard() {
 
   // For each event day get attendance count
   const trendData = eventDaysInMonth.map(d => {
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     const present = active.filter(k => (allKidAtt[k.id]||[]).some(a => a.event_date === dateStr)).length;
     const absent  = active.length - present;
     return {
@@ -3637,17 +3639,24 @@ async function loadRecentAttendance() {
   if (!sb || !myLocation) return;
   const twoMonthsBack = new Date();
   twoMonthsBack.setMonth(twoMonthsBack.getMonth() - 2);
+  const tb = twoMonthsBack;
+  const twoMonthsBackStr = tb.getFullYear() + '-' + String(tb.getMonth()+1).padStart(2,'0') + '-' + String(tb.getDate()).padStart(2,'0');
   const { data: recentAtt } = await sb.from('attendance')
     .select('kid_id, event_date')
     .eq('location_id', myLocation.id)
-    .gte('event_date', twoMonthsBack.toISOString().split('T')[0]);
+    .gte('event_date', twoMonthsBackStr);
   allKidAtt = {};
   (recentAtt || []).forEach(a => {
     if (!allKidAtt[a.kid_id]) allKidAtt[a.kid_id] = [];
     allKidAtt[a.kid_id].push(a);
   });
 }
-
+function localDateStr(date) {
+  const d = date || new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+}
 async function loadDonors() {
   if (!sb || !myLocation) return;
   const { data: dd, error } = await sb.from('donors')
