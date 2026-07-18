@@ -5283,7 +5283,13 @@ function _renderStockFinance() {
   if (!stockEntries.length) {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--gray);">No stock purchases recorded for this FY.</td></tr>';
   } else {
-    tbody.innerHTML = stockEntries.map(e => {
+    const visibleEntries = stockEntries.filter(e => (e.qty_left || 0) > 0);
+    const hiddenCount    = stockEntries.length - visibleEntries.length;
+    tbody.innerHTML = (hiddenCount > 0
+      ? `<tr><td colspan="7" style="font-size:11px;color:var(--gray);text-align:center;padding:4px;">
+          ${hiddenCount} exhausted stock entr${hiddenCount>1?'ies':'y'} hidden (qty left = 0)
+         </td></tr>` : '') +
+    visibleEntries.map(e => {
       const giftName = e.gifts?.name || '—';
       const totalCost = (e.qty_bought * (e.buy_price_per_unit||0)) + (e.transport_cost||0);
       const stockPct  = e.qty_bought > 0 ? Math.round(e.qty_left / e.qty_bought * 100) : 0;
@@ -5298,7 +5304,6 @@ function _renderStockFinance() {
         <td style="white-space:nowrap;">${fmtDate(e.purchase_date)}</td>
         <td><div style="display:flex;gap:4px;">
           ${role!=='volunteer'?`<button class="btn btn-gray" style="padding:3px 8px;font-size:11px;" onclick="openStockEntryModal('${e.id}')">Edit</button>`:''}
-          ${role!=='volunteer'?`<button class="btn btn-red"  style="padding:3px 8px;font-size:11px;" onclick="deleteStockEntry('${e.id}')">Del</button>`:''}
         </div></td>
       </tr>`;
     }).join('');
@@ -5404,23 +5409,39 @@ function _renderStockFinance() {
 function filterSeGifts() {
   const catId        = $('seCatFilter')?.value || '';
   const notGivenOnly = $('seNotGivenOnly')?.checked || false;
-  const currentVal   = $('seGift').value;
+  const srch         = ($('seGiftSearch')?.value || '').toLowerCase();
 
   const filtered = gifts.filter(g => {
     if (catId && g.category_id !== catId) return false;
     if (notGivenOnly && giftStockSet.has(g.id)) return false;
+    if (srch && !(g.name||'').toLowerCase().includes(srch) &&
+                !(g.gift_categories?.name||'').toLowerCase().includes(srch)) return false;
     return true;
   }).sort((a,b) => (a.gift_categories?.name||'').localeCompare(b.gift_categories?.name||'') || (a.name||'').localeCompare(b.name||''));
 
-  $('seGift').innerHTML = '<option value="">Select gift from gallery…</option>' +
-    filtered.map(g => {
-      const cat   = g.gift_categories?.name ? `[${g.gift_categories.name}] ` : '';
-      const stock = giftStockSet.has(g.id) ? ' ✓' : '';
-      return `<option value="${g.id}">${cat}${g.name} — Rs.${(g.mrp||0).toLocaleString('en-IN')}${stock}</option>`;
-    }).join('');
+  const list = $('seGiftList');
+  if (!filtered.length) {
+    list.innerHTML = '<div style="padding:10px 12px;font-size:13px;color:var(--gray);">No gifts found</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(g => {
+    const cat   = g.gift_categories?.name ? `<span style="font-size:10px;color:var(--gray);">[${g.gift_categories.name}]</span> ` : '';
+    const stock = giftStockSet.has(g.id) ? ' <span style="color:var(--green);font-size:10px;">✓ given</span>' : '';
+    return `<div onclick="selectSeGift('${g.id}','${(g.name||'').replace(/'/g,"\\'")} — Rs.${(g.mrp||0).toLocaleString('en-IN')}')"
+      style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);"
+      onmouseover="this.style.background='var(--bl)'" onmouseout="this.style.background=''">
+      ${cat}${g.name} — Rs.${(g.mrp||0).toLocaleString('en-IN')}${stock}
+    </div>`;
+  }).join('');
+}
 
-  // Restore previous selection if still in filtered list
-  if (currentVal) $('seGift').value = currentVal;
+function selectSeGift(id, label) {
+  $('seGift').value = id;
+  const sel = $('seGiftSelected');
+  if (sel) { sel.textContent = '✓ ' + label; sel.style.display = 'block'; }
+  if ($('seGiftList')) $('seGiftList').innerHTML = '';
+  if ($('seGiftSearch')) $('seGiftSearch').value = label.split(' — ')[0];
+  calcStockCost();
 }
 // ── Stock entry modal
 function openStockEntryModal(id) {
@@ -5433,6 +5454,7 @@ function openStockEntryModal(id) {
   $('seCatFilter').innerHTML = '<option value="">All categories</option>' +
     [...catSet.entries()].sort((a,b) => a[1].localeCompare(b[1])).map(([id,name]) => `<option value="${id}">${name}</option>`).join('');
   $('seNotGivenOnly').checked = false;
+  if ($('seGiftSearch')) $('seGiftSearch').value = '';
   filterSeGifts();
   $('seVendor').innerHTML = '<option value="">— None / walk-in —</option>' +
     vendors.map(v => `<option value="${v.id}">${v.name} · ${v.mobile}</option>`).join('');
@@ -5440,7 +5462,8 @@ function openStockEntryModal(id) {
   if (id) {
     const e = stockEntries.find(x=>x.id===id); if(!e) return;
     $('seGift').value=''; // set after options loaded
-    setTimeout(()=>{ $('seGift').value=e.gift_id||''; },0);
+    const eg = gifts.find(x=>x.id===e.gift_id);
+    if (eg) selectSeGift(eg.id, eg.name + ' — Rs.' + (eg.mrp||0).toLocaleString('en-IN'));
     $('seQtyBought').value  = e.qty_bought||'';
     $('seQtyLeft').value    = e.qty_left||'';
     $('seBuyPrice').value   = e.buy_price_per_unit||'';
@@ -6023,7 +6046,10 @@ async function fetchImageAsDataURL(url) {
       </label>
     </div>
     <div class="fg"><label class="fl">Gift *</label>
-      <select class="fi" id="seGift"><option value="">Select gift from gallery…</option></select>
+      <input class="fi" type="text" id="seGiftSearch" placeholder="Type to search gifts…" oninput="filterSeGifts()" style="margin-bottom:4px;" autocomplete="off"/>
+      <input type="hidden" id="seGift"/>
+      <div id="seGiftList" style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--surf);"></div>
+      <div id="seGiftSelected" style="font-size:12px;color:var(--green);margin-top:4px;display:none;"></div>
     </div>
     <div class="fi-3">
       <div class="fg"><label class="fl">Qty bought *</label><input class="fi" type="number" id="seQtyBought" min="1" placeholder="10" oninput="onQtyBoughtChange()"/></div>
