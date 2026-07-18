@@ -331,7 +331,10 @@ select.fi{cursor:pointer;}
       <!-- Row 2: Attendance trend + Performance donut -->
       <div style="gap:12px;margin-bottom:12px;" class="dash-grid2">
         <div class="card" style="padding:14px;">
-          <div style="font-size:12px;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">Monthly attendance trend</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+            <div style="font-size:12px;font-weight:600;color:var(--gray);text-transform:uppercase;letter-spacing:.04em;">Monthly attendance trend</div>
+            <select id="trendMonthSel" class="fi" style="width:auto;font-size:11px;padding:3px 6px;" onchange="renderDashboard()"></select>
+          </div>
           <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
             <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:2px;background:#2a78d6;display:inline-block;"></span>Present</span>
             <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:2px;background:#e1e0d9;display:inline-block;"></span>Absent</span>
@@ -656,11 +659,14 @@ select.fi{cursor:pointer;}
       </div>
 
       <div class="card">
-        <div class="card-title">🎁 Gift brochure PDF</div>
+        <div class="card-title">🎁 Gift gallery export</div>
         <div style="font-size:13px;color:var(--gray);margin-bottom:12px;">
-          PDF with all gifts — photo, name, MRP, vendor. Vendor directory appended at end.
+          Export all gifts with price, vendor, category and stock status.
         </div>
-        <button class="btn btn-green" onclick="exportGiftBrochure()">⬇ Download gift brochure PDF</button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-green" onclick="exportGiftExcel()">⬇ Excel</button>
+          <button class="btn btn-gray" onclick="exportGiftBrochure()">⬇ PDF brochure</button>
+        </div>
       </div>
     </div>
 
@@ -1521,27 +1527,56 @@ async function renderDashboard() {
     <div class="metric"><div class="metric-val" style="color:var(--amber);">${totalSessions(curQStart, curQEnd)}</div><div class="metric-lbl">Attendance this quarter</div></div>
     <div class="metric"><div class="metric-val red">${kidsZeroAtt(curMonthStart, curMonthEnd)}</div><div class="metric-lbl">0 attendance this month</div></div>`;
 
-  // ── Monthly trend (last 6 months) ────────────────
-  const months6 = [];
-  for (let i = 2; i >= 0; i--) {
-    const d = new Date(y, m - i, 1);
-    const mStart = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
-    const mEnd   = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0];
-    const sessions = totalSessions(mStart, mEnd);
-    const absent   = active.length - kidsWithAtt(mStart, mEnd);
-    months6.push({
-      label: d.toLocaleString('en-IN', { month: 'short' }),
-      sessions, absent
-    });
+  // ── Monthly trend: populate month dropdown (current month - 2) ───
+  const trendSel = $('trendMonthSel');
+  if (trendSel && !trendSel.options.length) {
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date(y, m - i, 1);
+      const val   = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0');
+      const label = d.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+      const opt   = new Option(label, val);
+      trendSel.appendChild(opt);
+    }
+    trendSel.value = y + '-' + String(m + 1).padStart(2,'0'); // default: current month
   }
+
+  // Get selected month
+  const selVal   = trendSel?.value || (y + '-' + String(m + 1).padStart(2,'0'));
+  const [selY, selM] = selVal.split('-').map(Number);
+  const selDate  = new Date(selY, selM - 1, 1);
+  const selEnd   = new Date(selY, selM, 0); // last day of month
+
+  // Find all event days within selected month
+  const eventDay3  = myLocation?.event_day ?? 0;
+  const eventDaysInMonth = [];
+  const cursor = new Date(selDate);
+  while (cursor <= selEnd) {
+    if (cursor.getDay() === eventDay3) {
+      eventDaysInMonth.push(new Date(cursor));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  // For each event day get attendance count
+  const trendData = eventDaysInMonth.map(d => {
+    const dateStr = d.toISOString().split('T')[0];
+    const present = active.filter(k => (allKidAtt[k.id]||[]).some(a => a.event_date === dateStr)).length;
+    const absent  = active.length - present;
+    return {
+      label   : d.toLocaleDateString('en-IN', { day:'numeric', month:'short' }),
+      present,
+      absent,
+    };
+  });
+
   destroyDashChart('trend');
   if ($('dashTrendChart')) dashCharts.trend = new Chart($('dashTrendChart'), {
     type: 'bar',
     data: {
-      labels: months6.map(x => x.label),
+      labels: trendData.map(x => x.label),
       datasets: [
-        { label:'Sessions', data: months6.map(x => x.sessions), backgroundColor:'#2a78d6', borderRadius:4, barPercentage:0.65 },
-        { label:'Absent',   data: months6.map(x => x.absent),   backgroundColor:'#e1e0d9', borderRadius:4, barPercentage:0.65 }
+        { label:'Present', data: trendData.map(x => x.present), backgroundColor:'#2a78d6', borderRadius:4, barPercentage:0.65 },
+        { label:'Absent',  data: trendData.map(x => x.absent),  backgroundColor:'#e1e0d9', borderRadius:4, barPercentage:0.65 }
       ]
     },
     options: {
@@ -3847,7 +3882,7 @@ function updateWAMsg() {
 
 Namaste ${nm},
 
-📱 App link: ${window.location.origin}
+📱 App link: https://vsddombivli.github.io/prabhu_pooja/
 👤 Login mobile: ${mob}
 🔑 Password: ${pass}
 📍 Location: ${loc}
@@ -5805,6 +5840,46 @@ function showVolunteerWelcome() {
   // Auto-dismiss after 8 seconds
   setTimeout(() => { if (popper.parentElement) popper.remove(); }, 8000);
 }
+async function exportGiftExcel() {
+  if (!gifts.length) { toast('No gifts in gallery'); return; }
+
+  // Load stock totals per gift for this location
+  const { data: stockData } = await sb.from('gift_stock_entries')
+    .select('gift_id, qty_bought, qty_left, buy_price_per_unit, transport_cost')
+    .eq('location_id', myLocation.id);
+
+  // Aggregate stock per gift
+  const stockMap = {};
+  (stockData || []).forEach(e => {
+    if (!stockMap[e.gift_id]) stockMap[e.gift_id] = { qty_bought:0, qty_left:0, total_cost:0 };
+    stockMap[e.gift_id].qty_bought += (e.qty_bought||0);
+    stockMap[e.gift_id].qty_left   += (e.qty_left||0);
+    stockMap[e.gift_id].total_cost += (e.qty_bought*(e.buy_price_per_unit||0)) + (e.transport_cost||0);
+  });
+
+  const rows = [...gifts]
+    .sort((a,b) => (a.gift_categories?.name||'').localeCompare(b.gift_categories?.name||'') || (a.mrp||0)-(b.mrp||0))
+    .map(g => {
+      const st = stockMap[g.id] || {};
+      return {
+        'Category'         : g.gift_categories?.name || '',
+        'Gift Name'        : g.name || '',
+        'MRP (Rs.)'        : g.mrp || 0,
+        'Vendor'           : g.vendors?.name || '',
+        'Vendor Mobile'    : g.vendors?.mobile || '',
+        'Description'      : g.description || '',
+        'Qty Bought'       : st.qty_bought || 0,
+        'Qty Left'         : st.qty_left   || 0,
+        'Total Cost (Rs.)' : st.total_cost || 0,
+        'Stock Status'     : st.qty_left > 0 ? 'Available' : (st.qty_bought > 0 ? 'Exhausted' : 'Not purchased'),
+        'Uploaded By'      : g.profiles?.full_name || '',
+      };
+    });
+
+  xlDown(rows, `Gift_Gallery_${myLocation?.name||'VSD'}_${TODAY}`);
+  toast(`Exported ${rows.length} gifts`);
+}
+  
 // ── Gift brochure PDF ─────────────────────────────
 async function exportGiftBrochure() {
   if (!gifts.length) { toast('No gifts in gallery'); return; }
