@@ -716,13 +716,14 @@ select.fi{cursor:pointer;}
         <button class="btn btn-green" onclick="saveLocationEventDay()">Save location settings</button>
       </div>
       <div class="card" id="eventScheduleCard">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-          <div class="card-title" style="margin:0;">Event day schedule</div>
-          <select class="fi" id="schedFY" style="width:auto;" onchange="loadEventSchedule()"></select>
-        </div>
-        <div style="font-size:12px;color:var(--gray);margin-bottom:10px;">Toggle off any Sunday that was skipped. All calculations, attendance and donor assignments respect this.</div>
-          <div id="eventScheduleList"><div style="color:var(--gray);font-size:13px;">Loading…</div></div>
-        </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+        <div class="card-title" style="margin:0;">Event day schedule</div>
+        <select class="fi" id="schedFY" style="width:auto;" onchange="loadEventSchedule()"></select>
+      </div>
+      <div style="font-size:12px;color:var(--gray);margin-bottom:10px;">Toggle off any Sunday that was skipped. All calculations, attendance and donor assignments respect this.</div>
+        <div id="eventScheduleList"><div style="color:var(--gray);font-size:13px;">Loading…</div></div>
+      </div>
+      <div class="card" id="qrSettingsCard">
         <div class="card-title">QR Code settings <span class="badge badge-red">Superadmin only</span></div>
         <div class="fg" style="display:flex;align-items:center;justify-content:space-between;">
           <label class="fl" style="margin:0;">Auto-generate QR codes for kids</label>
