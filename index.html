@@ -2241,6 +2241,7 @@ function renderKidList() {
           ${isVol ? '<td></td>' : '<td class="kid-chk-td"><input type="checkbox" class="kid-chk" data-id="'+k.id+'" onclick="onKidCheck()"/></td>'}
           <td>
             <div style="display:flex;gap:4px;align-items:center;">
+              <button onclick="openKidDetail('${k.id}')" title="View details" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px;">👁</button>
               ${role!=='volunteer'?`<button onclick="openKidModal('${k.id}')" title="Edit" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px;">✏️</button>`:''}
               ${role!=='volunteer'?`<button onclick="deleteKid('${k.id}')" title="Delete" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px;">🗑️</button>`:''}
             </div>
@@ -2453,6 +2454,61 @@ async function deleteKid(id) {
     toast('Kid deleted');
   });
 }
+
+function openKidDetail(id) {
+  const k = kids.find(x => x.id === id); if (!k) return;
+  $('kidDetailTitle').textContent = k.full_name;
+
+  // QR code rendering
+  const qrHtml = k.qr_code ? `
+    <div style="text-align:center;margin-bottom:12px;">
+      <div id="kidDetailQR" style="display:inline-block;padding:8px;background:#fff;border:1px solid var(--border);border-radius:8px;"></div>
+      <div style="font-size:11px;color:var(--gray);margin-top:4px;word-break:break-all;">${k.qr_code}</div>
+    </div>` : '<div style="font-size:12px;color:var(--gray);margin-bottom:12px;">No QR code assigned.</div>';
+
+  const rows = [
+    ['ID No',       '#' + String(k.kid_no).padStart(3,'0')],
+    ['Full name',   k.full_name],
+    ['Date of birth', k.dob ? fmtDate(k.dob) : '—'],
+    ['Age',         k.dob ? age(k.dob) : '—'],
+    ['Gender',      k.gender || '—'],
+    ['Mobile',      k.mobile || '—'],
+    ['Points',      (k.quarterly_points||0) + ' pts'],
+    ['Status',      k.is_active ? 'Active' : 'Inactive'],
+    ['QR Code ID',  k.qr_code || '—'],
+  ];
+
+  $('kidDetailBody').innerHTML = `
+    ${k.photo_url ? `<div style="text-align:center;margin-bottom:12px;">
+      <img src="${k.photo_url}" onclick="viewKidPhoto('${k.photo_url}','${k.full_name}')"
+        style="width:80px;height:80px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid var(--border);"/>
+    </div>` : ''}
+    ${qrHtml}
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      ${rows.map(([l,v]) => `
+        <tr>
+          <td style="padding:6px 0;color:var(--gray);width:45%;font-size:12px;">${l}</td>
+          <td style="padding:6px 0;font-weight:600;">${v}</td>
+        </tr>`).join('')}
+    </table>`;
+
+  openModal('kidDetailModal');
+
+  // Render QR after modal opens
+  if (k.qr_code) {
+    setTimeout(() => {
+      const qrBox = $('kidDetailQR');
+      if (!qrBox) return;
+      qrBox.innerHTML = '';
+      new QRCode(qrBox, {
+        text: k.qr_code, width: 140, height: 140,
+        colorDark: '#000', colorLight: '#fff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }, 100);
+  }
+}
+  
 function syncCameraToGallery() {
   const cam = $('kPhotoCamera');
   const gal = $('kPhoto');
@@ -6297,6 +6353,19 @@ async function fetchImageAsDataURL(url) {
       <button class="btn btn-green" onclick="generateThermalQR()">🖨 Print / Download</button>
     </div>
   </div>
+</div>
+<!-- Kid Detail Modal -->
+<div class="modal-overlay" id="kidDetailModal">
+<div class="modal" style="max-width:420px;">
+  <div class="modal-head">
+    <div class="modal-title" id="kidDetailTitle">Kid details</div>
+    <button style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--gray);" onclick="closeModal('kidDetailModal')">&#x2715;</button>
+  </div>
+  <div class="modal-body" id="kidDetailBody"></div>
+  <div class="modal-foot">
+    <button class="btn btn-gray" onclick="closeModal('kidDetailModal')">Close</button>
+  </div>
+</div>
 </div>
 </body>
 </html>
