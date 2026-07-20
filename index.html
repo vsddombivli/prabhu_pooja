@@ -512,6 +512,7 @@ select.fi{cursor:pointer;}
 
     <!-- ── DONORS (admin only) ── -->
     <div id="screen-donors" class="screen">
+      <div id="donorDisabledWarn" class="alert alert-red" style="display:none;margin-bottom:10px;"></div>
       <div class="toolbar" id="donorToolbar">
         <button class="btn btn-green" id="addDonorBtn" onclick="openDonorModal()">+ Add donor</button>
         <button class="btn btn-gray"  id="exportDonorBtn" onclick="exportDonors()">↓ Export Excel</button>
@@ -714,7 +715,14 @@ select.fi{cursor:pointer;}
         </div>
         <button class="btn btn-green" onclick="saveLocationEventDay()">Save location settings</button>
       </div>
-      <div class="card" id="qrSettingsCard">
+      <div class="card" id="eventScheduleCard">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+          <div class="card-title" style="margin:0;">Event day schedule</div>
+          <select class="fi" id="schedFY" style="width:auto;" onchange="loadEventSchedule()"></select>
+        </div>
+        <div style="font-size:12px;color:var(--gray);margin-bottom:10px;">Toggle off any Sunday that was skipped. All calculations, attendance and donor assignments respect this.</div>
+          <div id="eventScheduleList"><div style="color:var(--gray);font-size:13px;">Loading…</div></div>
+        </div>
         <div class="card-title">QR Code settings <span class="badge badge-red">Superadmin only</span></div>
         <div class="fg" style="display:flex;align-items:center;justify-content:space-between;">
           <label class="fl" style="margin:0;">Auto-generate QR codes for kids</label>
@@ -1071,6 +1079,7 @@ let myLocation = null;   // location row for admin/volunteer
 let kids = [];           // all kids for current location
 let attendance = {};     // { kid_id: attendance_row } for today
 let allKidAtt  = {};     // { kid_id: [attendance rows] } last 2 months
+let disabledEventDays = new Set(); // ISO date strings of disabled event days  
 let attFilter = 'all';
 let kidFilter = 'all';
 
@@ -1155,7 +1164,8 @@ function lastNEventDays(n) {
       const yyyy = check.getFullYear();
       const mm   = String(check.getMonth() + 1).padStart(2, '0');
       const dd   = String(check.getDate()).padStart(2, '0');
-      days.unshift(`${yyyy}-${mm}-${dd}`);
+      const ds = `${yyyy}-${mm}-${dd}`;
+      if (!disabledEventDays.has(ds)) days.unshift(ds);
     }
   }
   return days;
@@ -1387,6 +1397,12 @@ function enterApp() {
 
 function refreshLocationSettingsFields() {
   if (!myLocation) return;
+  // Populate schedule FY dropdown
+  if ($('schedFY')) {
+    $('schedFY').innerHTML = fyOptions().map(fy =>
+      `<option value="${fy}" ${fy===currentFY()?'selected':''}>${fy}</option>`
+    ).join('');
+  }
   const eventDayEl = $('cfgEventDay');
   const fyMonthEl = $('cfgFYMonth');
   if (eventDayEl) eventDayEl.value = String(myLocation.event_day ?? 0);
@@ -1484,6 +1500,7 @@ async function loadAll() {
   renderDashboard();
   renderAttList();
   renderKidList();
+  loadEventSchedule();
 }
 
 // ═══════════════════════════════════════════════════
@@ -1514,7 +1531,9 @@ async function renderDashboard() {
   const lqEnd         = new Date(lqY, lqQ * 3 + 3, 0).toISOString().split('T')[0];
 
   function countInRange(kidId, from, to) {
-    return (allKidAtt[kidId] || []).filter(a => a.event_date >= from && a.event_date <= to).length;
+    return (allKidAtt[kidId] || []).filter(a =>
+      a.event_date >= from && a.event_date <= to && !disabledEventDays.has(a.event_date)
+    ).length;
   }
   function totalSessions(from, to) {
     return active.reduce((s, k) => s + countInRange(k.id, from, to), 0);
@@ -1554,7 +1573,8 @@ async function renderDashboard() {
   const cursor = new Date(selDate);
   while (cursor <= selEnd) {
     if (cursor.getDay() === eventDay3) {
-      eventDaysInMonth.push(new Date(cursor));
+      const ds = localDateStr(cursor);
+      if (!disabledEventDays.has(ds)) eventDaysInMonth.push(new Date(cursor));
     }
     cursor.setDate(cursor.getDate() + 1);
   }
@@ -2027,10 +2047,14 @@ function renderAttList() {
     dayLabel.textContent = 'Today is not ' + dayNames[eventDay] + ' — attendance closed';
   }
   // Disable QR scan button on wrong day
+  const isDayDisabled = disabledEventDays.has(TODAY);
+  const canMark = isEventDay && !isDayDisabled;
   if ($('qrScanBtn')) {
-    $('qrScanBtn').disabled = !isEventDay;
-    $('qrScanBtn').style.opacity = isEventDay ? '1' : '0.5';
-    $('qrScanBtn').title = isEventDay ? '' : 'Attendance only allowed on ' + dayNames[eventDay] + 's';
+    $('qrScanBtn').disabled = !canMark;
+    $('qrScanBtn').style.opacity = canMark ? '1' : '0.5';
+    $('qrScanBtn').title = !isEventDay ? 'Attendance only allowed on ' + dayNames[eventDay] + 's'
+                         : isDayDisabled ? 'This event day is disabled'
+                         : '';
   }
 
   const srch = ($('attSearch')?.value || '').toLowerCase();
@@ -2067,7 +2091,7 @@ function renderAttList() {
       }
       d.setDate(d.getDate() - 1);
     }
-    return days;
+     return days.filter(d => !disabledEventDays.has(d));
   }
   const eventDaysList = getPerfEventDays();
   function kidPerfPct(k) {
@@ -2104,8 +2128,9 @@ function renderAttList() {
     ? list.map(k => {
         const pr = !!attendance[k.id];
         const c = avColor(k.full_name);
-        const canRevert = role === 'admin' || role === 'superadmin';
-        const dis = pr && !canRevert ? 'disabled' : '';
+        const canRevert    = role === 'admin' || role === 'superadmin';
+        const isDayOff     = disabledEventDays.has(TODAY);
+        const dis = (pr && !canRevert) || (!pr && isDayOff) ? 'disabled' : '';
         const av = k.photo_url
           ? `<div class="av" style="cursor:pointer;" onclick="viewKidPhoto('${k.photo_url}','${k.full_name}')" title="Click to view photo"><img src="${k.photo_url}" alt=""/></div>`
           : `<div class="av" style="background:${c.bg};color:${c.fg};font-size:11px;">${ini(k.full_name)}</div>`;
@@ -2149,6 +2174,10 @@ async function toggleAtt(kidId) {
   const todayDay = new Date().getDay();
   if (!pr && todayDay !== eventDay) {
     toast('Attendance only allowed on ' + dayNames[eventDay] + 's');
+    return;
+  }
+  if (!pr && disabledEventDays.has(TODAY)) {
+    toast('This event day has been disabled. No attendance allowed.');
     return;
   }
 
@@ -2536,7 +2565,7 @@ async function openKidAttHistory(kidId) {
   openModal('kidAttHistoryModal');
 
   // Get all event days for last 2 months
-  const eventDays = lastNEventDays(9);
+  const eventDays = lastNEventDays(9).filter(d => !disabledEventDays.has(d));
   const { data: attRows } = await sb.from('attendance')
     .select('*').eq('kid_id', kidId).in('event_date', eventDays);
   const attMap = {};
@@ -3053,6 +3082,13 @@ async function handleQRScan(qrData) {
     }, 2000);
     return;
   }
+  if (disabledEventDays.has(TODAY)) {
+    $('qrScanStatus').textContent = '⛔ This event day is disabled';
+    $('qrScanStatus').style.background = 'rgba(163,45,45,.8)';
+    speakQR('This event day has been turned off. No attendance allowed.');
+    setTimeout(() => { qrLastScan=''; $('qrScanStatus').textContent='Point camera at QR code'; $('qrScanStatus').style.background='rgba(0,0,0,.6)'; qrAnimFrame=requestAnimationFrame(scanQRFrame); }, 2000);
+    return;
+  }
 
   $('qrScanStatus').textContent = '⏳ Processing…';
   $('qrScanStatus').style.background = 'rgba(26,130,115,.85)';
@@ -3566,6 +3602,83 @@ function loadQRSettings() {
   // Hide QR settings card from non-superadmin
   if ($('qrSettingsCard')) $('qrSettingsCard').style.display = (role === 'superadmin') ? 'block' : 'none';
 }
+async function loadEventSchedule() {
+  if (!sb || !myLocation) return;
+  const fy  = $('schedFY')?.value || currentFY();
+  const [sy] = fy.split('-');
+  const startMonth = (myLocation.fy_start_month ?? 4) - 1; // 0-indexed
+  const fyStart = new Date(parseInt(sy), startMonth, 1);
+  const fyEnd   = new Date(parseInt(sy) + 1, startMonth, 0);
+
+  // Get all event days in this FY
+  const eventDay = myLocation.event_day ?? 0;
+  const allEventDays = [];
+  const cursor = new Date(fyStart);
+  while (cursor <= fyEnd) {
+    if (cursor.getDay() === eventDay) {
+      allEventDays.push(localDateStr(cursor));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  // Load existing schedule rows
+  const { data: schedRows } = await sb.from('event_day_schedule')
+    .select('*')
+    .eq('location_id', myLocation.id)
+    .in('event_date', allEventDays);
+
+  // Build map: date -> row
+  const schedMap = {};
+  (schedRows || []).forEach(r => schedMap[r.event_date] = r);
+
+  // Update global disabled set
+  disabledEventDays = new Set(
+    allEventDays.filter(d => schedMap[d] && !schedMap[d].is_active)
+  );
+
+  // Render
+  const el = $('eventScheduleList'); if (!el) return;
+  if (!allEventDays.length) { el.innerHTML = '<div style="color:var(--gray);font-size:13px;">No event days found for this FY.</div>'; return; }
+
+  el.innerHTML = allEventDays.map(date => {
+    const row   = schedMap[date];
+    const isOn  = !row || row.is_active;
+    const isPast = date < localDateStr();
+    const label  = new Date(date + 'T12:00:00').toLocaleDateString('en-IN', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);gap:8px;">
+      <div>
+        <div style="font-size:13px;font-weight:${isOn?'500':'400'};color:${isOn?'var(--text)':'var(--gray)'};">${label}</div>
+        ${!isOn && row?.reason ? `<div style="font-size:11px;color:var(--gray);">${row.reason}</div>` : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        ${!isOn ? `<input class="fi" style="width:120px;font-size:11px;padding:4px 6px;" placeholder="Reason (optional)"
+          id="schedReason_${date}" value="${row?.reason||''}"/>` : ''}
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" ${isOn?'checked':''} onchange="toggleEventDay('${date}',this)"
+            style="width:16px;height:16px;accent-color:var(--green);"/>
+          <span style="font-size:12px;color:${isOn?'var(--green)':'var(--red)'};">${isOn?'ON':'OFF'}</span>
+        </label>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function toggleEventDay(date, cb) {
+  const isActive = cb.checked;
+  const reason   = $(`schedReason_${date}`)?.value.trim() || null;
+  const { error } = await sb.from('event_day_schedule').upsert({
+    location_id : myLocation.id,
+    event_date  : date,
+    is_active   : isActive,
+    reason      : reason,
+  }, { onConflict: 'location_id,event_date' });
+  if (error) { toast('Error: ' + error.message); cb.checked = !isActive; return; }
+
+  if (isActive) disabledEventDays.delete(date);
+  else          disabledEventDays.add(date);
+  toast(isActive ? `${date} turned ON` : `${date} turned OFF`);
+  loadEventSchedule(); // re-render to show/hide reason field
+}
 // ═══════════════════════════════════════════════════
 // LOCATION EVENT DAY SAVE
 // ═══════════════════════════════════════════════════
@@ -3693,7 +3806,16 @@ async function switchFY(fy, btn) {
 async function loadPhase2() {
   if (!sb || !myLocation) return;
   if (!activeFY) activeFY = currentFY();
-  await Promise.all([loadDonors(), loadAllUsers(), loadAllLocations(), loadGiftData(), loadRecentAttendance(), loadStockData()]);
+  await Promise.all([loadDonors(), loadAllUsers(), loadAllLocations(), loadGiftData(), loadRecentAttendance(), loadStockData(), loadDisabledDays()]);
+}
+
+async function loadDisabledDays() {
+  if (!sb || !myLocation) return;
+  const { data } = await sb.from('event_day_schedule')
+    .select('event_date, is_active')
+    .eq('location_id', myLocation.id)
+    .eq('is_active', false);
+  disabledEventDays = new Set((data||[]).map(r => r.event_date));
 }
 
 async function loadRecentAttendance() {
@@ -4242,6 +4364,26 @@ function renderDonorList() {
   if ($('addDonorBtn'))    $('addDonorBtn').style.display    = isVol ? 'none' : '';
   if ($('exportDonorBtn')) $('exportDonorBtn').style.display = isVol ? 'none' : '';
   buildFYTabs();
+  // Warn about donors assigned to disabled event days
+  const disabledAssignments = [];
+  donors.forEach(d => {
+    (donorSundays[d.id]||[]).forEach(s => {
+      if (disabledEventDays.has(s.sunday_date)) {
+        disabledAssignments.push({ donor: d.full_name, date: fmtDate(s.sunday_date) });
+      }
+    });
+  });
+  const warnEl = $('donorDisabledWarn');
+  if (warnEl) {
+    if (disabledAssignments.length) {
+      warnEl.style.display = 'block';
+      warnEl.innerHTML = `⚠️ <strong>${disabledAssignments.length} donor assignment${disabledAssignments.length>1?'s':''} on disabled event days:</strong> ` +
+        disabledAssignments.map(x => `${x.donor} → ${x.date}`).join(', ') +
+        '. Please reassign these donors.';
+    } else {
+      warnEl.style.display = 'none';
+    }
+  }
   const el = $('donorListContainer');
   const srch = ($('donorSearch')?.value || '').toLowerCase();
   let list = donors.filter(d => {
@@ -4526,6 +4668,10 @@ function calcDonorAmount() {
 function addSundayChip() {
   const val = $('dSundayPickerISO').value;
   if (!val) { toast('Enter a valid date in dd/mm/yyyy format'); return; }
+  if (disabledEventDays.has(val)) {
+    toast('This event day is disabled — cannot assign donor to it');
+    return;
+  }
   if (!val) return;
 
   // Get event day for current location (default 0 = Sunday)
