@@ -962,10 +962,10 @@ select.fi{cursor:pointer;}
     <div class="fg">
       <label class="fl">Sunday dates (pick dates for this donor)</label>
       <div style="display:flex;gap:8px;">
-        <input class="fi" type="date" id="dSundayPicker" placeholder="dd/mm/yyyy" maxlength="10"
-          oninput="fmtDateInput(this,'dSundayPickerISO')" inputmode="numeric" style="max-width:160px;"/>
-        <input type="hidden" id="dSundayPickerISO"/>
-        <button type="button" class="btn btn-gray" style="padding:8px 12px;font-size:13px;" onclick="addSundayChip()">+ Add</button>
+        <select class="fi" id="dSundayPicker" style="flex:1;">
+          <option value="">— Select a Sunday —</option>
+        </select>
+        <button type="button" class="btn btn-gray" style="padding:8px 12px;font-size:13px;flex-shrink:0;" onclick="addSundayChip()">+ Add</button>
       </div>
       <div class="chip-input-wrap" id="sundayChips" style="margin-top:6px;"></div>
     </div>
@@ -3652,8 +3652,11 @@ async function loadEventSchedule() {
         ${!isOn && row?.reason ? `<div style="font-size:11px;color:var(--gray);">${row.reason}</div>` : ''}
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-        ${!isOn ? `<input class="fi" style="width:120px;font-size:11px;padding:4px 6px;" placeholder="Reason (optional)"
-          id="schedReason_${date}" value="${row?.reason||''}"/>` : ''}
+        ${!isOn ? `
+          <input class="fi" style="width:100px;font-size:11px;padding:4px 6px;" placeholder="Reason…"
+            id="schedReason_${date}" value="${row?.reason||''}" onkeydown="if(event.key==='Enter')saveEventReason('${date}')"/>
+          <button onclick="saveEventReason('${date}')" class="btn btn-gray" style="padding:3px 8px;font-size:11px;flex-shrink:0;">Save</button>
+        ` : ''}
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
           <input type="checkbox" ${isOn?'checked':''} onchange="toggleEventDay('${date}',this)"
             style="width:16px;height:16px;accent-color:var(--green);"/>
@@ -3695,7 +3698,18 @@ async function saveLocationEventDay() {
   myLocation.fy_start_month  = fyMonth;
   toast('Location settings saved');
 }
-
+async function saveEventReason(date) {
+  const reason = $(`schedReason_${date}`)?.value.trim() || null;
+  const { error } = await sb.from('event_day_schedule').upsert({
+    location_id : myLocation.id,
+    event_date  : date,
+    is_active   : false,
+    reason      : reason,
+  }, { onConflict: 'location_id,event_date' });
+  if (error) { toast('Error: ' + error.message); return; }
+  toast('Reason saved');
+  loadEventSchedule();
+}
 // ═══════════════════════════════════════════════════
 // DIAGNOSE
 // ═══════════════════════════════════════════════════
@@ -4528,6 +4542,7 @@ function openDonorModal(id) {
       $('dSundays').value = d.num_sundays || 1;
       $('dAmount').value  = d.amount      || '';
       $('dFY').value      = d.fiscal_year || activeFY;
+      if ($('dFY')) $('dFY').onchange = () => { calcDonorAmount(); populateSundayPicker($('dFY').value); };
       $('dRefMobile').value = d.ref_mobile || '';
       const matchOpt = [...refDrop.options].find(o => o.value === d.reference_by);
       refDrop.value = matchOpt ? d.reference_by : '';
@@ -4542,6 +4557,7 @@ function openDonorModal(id) {
     $('dAmount').value  = '';
     $('dRefMobile').value = '';
     refDrop.value = '';
+    populateSundayPicker($('dFY').value || currentFY());
     calcDonorAmount();
   }
   openModal('donorModal');
@@ -4665,7 +4681,34 @@ function calcDonorAmount() {
   }
   $('dAmount').value = amount;
 }
+function populateSundayPicker(fy) {
+  const sel = $('dSundayPicker'); if (!sel) return;
+  const [sy] = (fy || currentFY()).split('-');
+  const startMonth = (myLocation?.fy_start_month ?? 4) - 1;
+  const eventDay   = myLocation?.event_day ?? 0;
+  const fyStart    = new Date(parseInt(sy), startMonth, 1);
+  const fyEnd      = new Date(parseInt(sy) + 1, startMonth, 0);
 
+  const sundays = [];
+  const cur = new Date(fyStart);
+  while (cur <= fyEnd) {
+    if (cur.getDay() === eventDay) {
+      const ds = localDateStr(cur);
+      if (!disabledEventDays.has(ds)) sundays.push(ds);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  // Filter out already-selected dates
+  sel.innerHTML = '<option value="">— Select a Sunday —</option>' +
+    sundays
+      .filter(d => !selectedSundays.includes(d))
+      .map(d => {
+        const label = new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+        return `<option value="${d}">${label}</option>`;
+      }).join('');
+}
+  
 function addSundayChip() {
   const val = $('dSundayPickerISO').value;
   if (!val) { toast('Enter a valid date in dd/mm/yyyy format'); return; }
@@ -4690,7 +4733,7 @@ function addSundayChip() {
   selectedSundays.push(val);
   selectedSundays.sort();
   renderSundayChips();
-  $('dSundayPicker').value = '';
+  populateSundayPicker($('dFY')?.value || currentFY());
   $('dSundayPickerISO').value = '';
 }
 
