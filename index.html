@@ -4699,14 +4699,16 @@ function populateSundayPicker(fy) {
     cur.setDate(cur.getDate() + 1);
   }
 
-  // Filter out already-selected dates
+  // Show all sundays — mark already-added ones as (added)
   sel.innerHTML = '<option value="">— Select a Sunday —</option>' +
-    sundays
-      .filter(d => !selectedSundays.includes(d))
-      .map(d => {
-        const label = new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
-        return `<option value="${d}">${label}</option>`;
-      }).join('');
+    sundays.map(d => {
+      const label = new Date(d + 'T12:00:00').toLocaleDateString('en-IN',
+        { day:'numeric', month:'short', year:'numeric' });
+      const added = selectedSundays.includes(d);
+      return `<option value="${d}" ${added?'disabled':''}>
+        ${label}${added?' ✓ (added)':''}
+      </option>`;
+    }).join('');
 }
   
 function addSundayChip() {
