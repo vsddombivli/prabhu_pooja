@@ -4786,24 +4786,21 @@ async function saveDonor() {
     donors.push(nd);
   }
 
-  // Sync sunday dates
+  // Sync sunday dates — safest approach: delete all then re-insert
+  // This avoids the buggy .not('sunday_date','in',...) pattern
+  await sb.from('donor_sundays').delete().eq('donor_id', donorId);
   if (selectedSundays.length) {
-    // Delete removed ones
-    await sb.from('donor_sundays').delete()
-      .eq('donor_id', donorId)
-      .not('sunday_date', 'in', '(' + selectedSundays.map(d=>`'${d}'`).join(',') + ')');
-    // Upsert current ones
-    await sb.from('donor_sundays').upsert(
+    const { error: sunErr } = await sb.from('donor_sundays').insert(
       selectedSundays.map(d => ({
         donor_id    : donorId,
         location_id : myLocation.id,
         sunday_date : d,
-      })),
-      { onConflict: 'donor_id,sunday_date' }
+      }))
     );
-  } else if (id) {
-    // All dates removed
-    await sb.from('donor_sundays').delete().eq('donor_id', donorId);
+    if (sunErr) {
+      console.warn('Sunday insert error:', sunErr.message);
+      toast('Donor saved but Sunday dates may not have saved: ' + sunErr.message);
+    }
   }
 
   await loadDonors();
