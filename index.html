@@ -4513,9 +4513,10 @@ function openDonorModal(id) {
 
   // Populate FY select
   const fyEl = $('dFY');
-  fyEl.innerHTML = fyOptions().map(fy =>
-    `<option value="${fy}" ${fy===activeFY?'selected':''}>${fy}</option>`
-  ).join('');
+  fyEl.onchange = () => {
+    calcDonorAmount();
+    populateSundayPicker(fyEl.value);
+  };
 
   // Populate ref volunteer dropdown
   const volUsers = allUsers.filter(u => u.role === 'volunteer' || u.role === 'admin');
@@ -4560,6 +4561,7 @@ function openDonorModal(id) {
     populateSundayPicker($('dFY').value || currentFY());
     calcDonorAmount();
   }
+  populateSundayPicker($('dFY')?.value || activeFY);
   openModal('donorModal');
 }
 function sendDonorReceipt(donorId) {
@@ -4712,31 +4714,15 @@ function populateSundayPicker(fy) {
 }
   
 function addSundayChip() {
-  const val = $('dSundayPickerISO').value;
-  if (!val) { toast('Enter a valid date in dd/mm/yyyy format'); return; }
-  if (disabledEventDays.has(val)) {
-    toast('This event day is disabled — cannot assign donor to it');
-    return;
-  }
-  if (!val) return;
-
-  // Get event day for current location (default 0 = Sunday)
-  const eventDay = myLocation?.event_day ?? 0;
-  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const picked = new Date(val + 'T00:00:00');
-
-  if (picked.getDay() !== eventDay) {
-    toast('Please pick a ' + dayNames[eventDay] + ' — event day for this location');
-    $('dSundayPicker').value = '';
-    return;
-  }
-
+  const val = $('dSundayPicker').value;
+  if (!val) { toast('Select a Sunday first'); return; }
+  if (disabledEventDays.has(val)) { toast('This event day is disabled'); return; }
   if (selectedSundays.includes(val)) { toast('Date already added'); return; }
   selectedSundays.push(val);
   selectedSundays.sort();
   renderSundayChips();
-  populateSundayPicker($('dFY')?.value || currentFY());
-  $('dSundayPickerISO').value = '';
+  // Refresh picker to mark this date as added
+  populateSundayPicker($('dFY')?.value || activeFY);
 }
 
 function removeSundayChip(date) {
