@@ -4513,6 +4513,10 @@ function openDonorModal(id) {
 
   // Populate FY select
   const fyEl = $('dFY');
+  const targetFY = donors.find(x => x.id === id)?.fiscal_year || activeFY || currentFY();
+  fyEl.innerHTML = fyOptions().map(fy =>
+    `<option value="${fy}" ${fy === targetFY ? 'selected' : ''}>${fy}</option>`
+  ).join('');
   fyEl.onchange = () => {
     calcDonorAmount();
     populateSundayPicker(fyEl.value);
