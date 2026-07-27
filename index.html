@@ -935,6 +935,9 @@ select.fi{cursor:pointer;}
       <div class="fg"><label class="fl">Full name *</label><input class="fi" id="dName" placeholder="Ramesh Patel"/></div>
       <div class="fg"><label class="fl">Mobile *</label><input class="fi" type="tel" id="dMobile" maxlength="10" placeholder="9876543210"/></div>
     </div>
+    <div class="fg"><label class="fl">PAN Card (optional)</label>
+      <input class="fi" id="dPAN" placeholder="ABCDE1234F" maxlength="10" style="text-transform:uppercase;"/>
+    </div>
     <div class="fg"><label class="fl">Reference volunteer</label>
       <select class="fi" id="dRefDrop" onchange="onRefDropChange()" style="margin-bottom:6px;">
         <option value="">— Select existing volunteer —</option>
@@ -4543,6 +4546,7 @@ function openDonorModal(id) {
       $('dName').value    = d.full_name   || '';
       $('dMobile').value  = d.mobile      || '';
       $('dRef').value     = d.reference_by|| '';
+      $('dPAN').value       = d.pan_card     || '';
       $('dGift').value    = d.gift_source || 'temple';
       $('dSundays').value = d.num_sundays || 1;
       $('dAmount').value  = d.amount      || '';
@@ -4556,7 +4560,7 @@ function openDonorModal(id) {
       suns.forEach(s => { selectedSundays.push(s.sunday_date); renderSundayChips(); });
     }
   } else {
-    ['dName','dMobile','dRef'].forEach(x => $(x).value = '');
+    ['dName','dMobile','dRef','dPAN'].forEach(x => $(x).value = '');
     $('dGift').value    = 'temple';
     $('dSundays').value = 1;
     $('dAmount').value  = '';
@@ -4569,60 +4573,223 @@ function openDonorModal(id) {
   openModal('donorModal');
 }
 function sendDonorReceipt(donorId) {
-  const d        = donors.find(x => x.id === donorId);
+  const d = donors.find(x => x.id === donorId);
   if (!d) return;
+
+  if (d.pan_card && d.pan_card.length === 10) {
+    // PAN available — route to Online Receipt Generator
+    openOnlineReceiptFlow(donorId);
+  } else {
+    // No PAN — generate simple cash memo PDF
+    generateCashMemoPDF(donorId);
+  }
+}
+async function generateCashMemoPDF(donorId) {
+  const d        = donors.find(x => x.id === donorId); if (!d) return;
   const payments = donorPayments[donorId] || [];
   const sundays  = donorSundays[donorId]  || [];
   const totalPaid= payments.reduce((s,p) => s+(p.amount||0), 0);
-  const locName  = myLocation?.name  || 'Prabhu Pooja';
-  const locCity  = myLocation?.city  || '';
+  const today    = new Date();
+  const dateStr  = String(today.getDate()).padStart(2,'0') + '/' +
+                   String(today.getMonth()+1).padStart(2,'0') + '/' +
+                   String(today.getFullYear()).slice(-2);
 
-  // Build payment detail lines
-  const payLines = payments.map((p,i) => {
-    const recv = allUsers.find(u => u.id === p.received_by);
-    const ref  = p.txn_ref ? ` | Ref: ${p.txn_ref}` : '';
-    const via  = recv ? ` | Rcvd by: ${recv.full_name}` : '';
-    return `  ${i+1}. Rs.${(p.amount||0).toLocaleString('en-IN')} | ${p.payment_mode.toUpperCase()} | ${fmtDate(p.paid_date)}${ref}${via}`;
-  }).join('\n');
+  // Simple receipt number: donor ID last 4 chars + date
+  const receiptNo = donorId.slice(-4).toUpperCase() + '-' +
+                    String(today.getMonth()+1).padStart(2,'0') +
+                    String(today.getFullYear()).slice(-2);
 
-  // Sunday schedule lines
-  const sundayLines = sundays.length
-    ? sundays.map(s => `  • ${fmtDate(s.sunday_date)}`).join('\n')
-    : '  Not yet assigned';
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a5' });
+  const pw = 148, ph = 210;
+  const m  = 10;
 
-  const giftType = d.gift_source === 'self' ? 'Donor brings gift' : 'Temple gift arranged';
-  const today    = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+  // Outer border
+  doc.setDrawColor(100); doc.setLineWidth(0.5);
+  doc.rect(m, m, pw-2*m, ph-2*m);
 
-  const msg =
-`🙏 *Prabhu Pooja — Payment Receipt*
-📍 *${locName}${locCity ? ', ' + locCity : ''}*
-📅 Receipt date: ${today}
-━━━━━━━━━━━━━━━━━━
-*Donor:* ${d.full_name}
-*Mobile:* ${d.mobile}
-*Fiscal year:* ${d.fiscal_year || activeFY}
-*No. of Sundays:* ${d.num_sundays}
-━━━━━━━━━━━━━━━━━━
-💰 *Payment summary*
-Total amount: Rs.${(d.amount||0).toLocaleString('en-IN')}
-Amount paid:  Rs.${totalPaid.toLocaleString('en-IN')}
-Status: ✅ *FULLY PAID*
-━━━━━━━━━━━━━━━━━━
-📋 *Payment details*
-${payLines}
-━━━━━━━━━━━━━━━━━━
-📆 *Sunday schedule*
-${sundayLines}
-━━━━━━━━━━━━━━━━━━
-🙏 Thank you for your generous contribution!
-Your seva is a blessing to all the childrens.
-*Vardhman Sanskar Dham*`;
+  // Header bar
+  doc.setFillColor(220,235,255);
+  doc.rect(m, m, pw-2*m, 10, 'F');
+  doc.setFontSize(11); doc.setFont(undefined,'bold'); doc.setTextColor(0,0,150);
+  doc.text('CASH / CREDIT MEMO', m+4, m+7);
+  doc.setFontSize(9); doc.setFont(undefined,'normal'); doc.setTextColor(150,0,0);
+  doc.text('नगद / पत रसिद', pw-m-4, m+7, { align:'right' });
 
-  // Open WhatsApp with pre-filled message
-  const phone = d.mobile.replace(/\D/g,'');
-  const url   = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
-  window.open(url, '_blank');
+  // From + No + Date
+  let y = m + 14;
+  doc.setTextColor(0); doc.setFontSize(8); doc.setFont(undefined,'bold');
+  doc.text('From :', m+3, y);
+  doc.setFont(undefined,'normal');
+  doc.text(myLocation?.name || 'Vardhman Sanskar Dham', m+16, y);
+  doc.text('No. :', pw-m-28, y); doc.text(receiptNo, pw-m-14, y);
+  y += 6;
+  doc.text('Date :', pw-m-28, y); doc.text(dateStr, pw-m-14, y);
+
+  // Divider
+  y += 4;
+  doc.setDrawColor(180); doc.setLineWidth(0.3);
+  doc.line(m, y, pw-m, y);
+
+  // M/s
+  y += 6;
+  doc.setFont(undefined,'bold'); doc.setFontSize(9);
+  doc.text('M/s.', m+3, y);
+  doc.setFont(undefined,'normal');
+  doc.text(d.full_name, m+14, y);
+  y += 5;
+  doc.setFontSize(8); doc.setTextColor(80);
+  doc.text('सर्वश्री', m+3, y);
+  doc.setTextColor(0);
+
+  // Column headers
+  y += 7;
+  doc.setDrawColor(180); doc.line(m, y-4, pw-m, y-4);
+  doc.setFontSize(8); doc.setFont(undefined,'bold');
+  doc.text('QTY.\nसंख्या', m+3, y-1);
+  doc.text('PARTICULAR\nविवरण', m+22, y-1);
+  doc.text('RATE\nदर', pw-m-30, y-1, { align:'right' });
+  doc.text('AMOUNT Rs.\nरक्कम', pw-m-4, y-1, { align:'right' });
+  doc.line(m, y+2, pw-m, y+2);
+  doc.setFont(undefined,'normal');
+
+  // Line items
+  y += 8;
+  const particulars = `Bal Sanskar Prabhu Pooja Nimite\n(${d.num_sundays} Sunday${d.num_sundays>1?'s':''} · ${d.gift_source==='self'?'Donor gift':'Temple gift'})`;
+  const lines = doc.splitTextToSize(particulars, pw-m-50);
+  doc.text('1', m+5, y);
+  doc.text(lines, m+22, y);
+  doc.text('', pw-m-30, y, { align:'right' });
+  doc.text('Rs.' + totalPaid.toLocaleString('en-IN'), pw-m-4, y, { align:'right' });
+
+  // Sunday dates below particulars
+  if (sundays.length) {
+    y += lines.length * 5 + 2;
+    doc.setFontSize(7); doc.setTextColor(80);
+    doc.text('Dates: ' + sundays.map(s=>fmtDate(s.sunday_date)).join(', '), m+22, y);
+    doc.setTextColor(0); doc.setFontSize(8);
+  }
+
+  // Draw lines for empty rows
+  for (let i = 0; i < 6; i++) {
+    y += 8;
+    doc.setDrawColor(220); doc.line(m, y, pw-m, y);
+  }
+
+  // Total box
+  y += 4;
+  doc.setDrawColor(100); doc.setLineWidth(0.4);
+  doc.line(m, y, pw-m, y);
+  doc.setFont(undefined,'bold'); doc.setFontSize(9);
+  doc.text('TOTAL / टोटल', pw-m-50, y+6);
+  doc.text('Rs.' + totalPaid.toLocaleString('en-IN'), pw-m-4, y+6, { align:'right' });
+  doc.line(m, y+9, pw-m, y+9);
+
+  // Footer
+  y = ph - m - 10;
+  doc.setFont(undefined,'normal'); doc.setFontSize(7); doc.setTextColor(100);
+  doc.text('Thank You / धन्यवाद', m+4, y+5);
+  doc.text('Vardhman Sanskar Dham, Dombivli', pw/2, y+5, { align:'center' });
+  doc.setDrawColor(100); doc.line(m, y, pw-m, y);
+
+  // Open PDF + share via WhatsApp
+  const pdfBlob = doc.output('blob');
+  const pdfUrl  = URL.createObjectURL(pdfBlob);
+
+  // Open in new tab for download/share
+  window.open(pdfUrl, '_blank');
+
+  // Also offer WhatsApp share
+  setTimeout(() => {
+    const waMsg = `🙏 Receipt for Prabhu Pooja donation\nDonor: ${d.full_name}\nAmount: Rs.${totalPaid.toLocaleString('en-IN')}\nDate: ${dateStr}\nReceipt No: ${receiptNo}\n\nVardhman Sanskar Dham`;
+    const waUrl = `https://wa.me/91${d.mobile}?text=${encodeURIComponent(waMsg)}`;
+    if (confirm('PDF opened. Also send WhatsApp notification to donor?')) {
+      window.open(waUrl, '_blank');
+    }
+  }, 500);
 }
+
+function openOnlineReceiptFlow(donorId) {
+  const d        = donors.find(x => x.id === donorId); if (!d) return;
+  const payments = donorPayments[donorId] || [];
+  const sundays  = donorSundays[donorId]  || [];
+  const totalPaid= payments.reduce((s,p) => s+(p.amount||0), 0);
+  const latestPay= payments.sort((a,b) => (b.paid_date||'').localeCompare(a.paid_date||''))[0];
+
+  // Build pre-fill params for online receipt generator
+  // Common Indian receipt generators: vyapar, refrens, invoice-generator.com etc.
+  // Using refrens.com as it supports Indian GST receipts and is free
+  // Pre-fill via URL params where supported, else copy to clipboard
+
+  const receiptData = {
+    donor_name   : d.full_name,
+    donor_mobile : d.mobile,
+    donor_pan    : d.pan_card,
+    amount       : totalPaid,
+    date         : latestPay?.paid_date || new Date().toISOString().split('T')[0],
+    particulars  : `Bal Sanskar Prabhu Pooja - ${d.num_sundays} Sunday${d.num_sundays>1?'s':''}`,
+    from         : 'Vardhman Sanskar Dham, Dombivli',
+    payment_mode : latestPay?.payment_mode || 'cash',
+    reference    : latestPay?.txn_ref || '',
+  };
+
+  // Copy details to clipboard for easy paste into receipt generator
+  const clipText =
+`RECEIPT DETAILS — Copy & paste into receipt generator
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+From    : Vardhman Sanskar Dham, Dombivli
+To      : ${receiptData.donor_name}
+PAN     : ${receiptData.donor_pan}
+Mobile  : ${receiptData.donor_mobile}
+Amount  : Rs.${totalPaid.toLocaleString('en-IN')}
+Date    : ${fmtDate(receiptData.date)}
+Purpose : ${receiptData.particulars}
+Mode    : ${receiptData.payment_mode.toUpperCase()}
+Ref     : ${receiptData.reference || 'N/A'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  navigator.clipboard.writeText(clipText).then(() => {
+    toast('Receipt details copied to clipboard!');
+  }).catch(() => {});
+
+  // Show modal with options
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;max-width:360px;width:90%;font-family:system-ui,sans-serif;">
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px;">🧾 Online Receipt</div>
+      <div style="font-size:13px;color:#52514e;margin-bottom:16px;">
+        PAN available for <strong>${d.full_name}</strong>.<br>
+        Receipt details have been copied to clipboard.<br><br>
+        Choose a receipt generator:
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button onclick="window.open('https://www.refrens.com/receipt-maker','_blank')" 
+          style="background:#2a78d6;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;cursor:pointer;text-align:left;">
+          📄 Refrens.com — Free Indian Receipt Maker<br>
+          <span style="font-size:11px;opacity:.8;">Paste details from clipboard → Download PDF</span>
+        </button>
+        <button onclick="window.open('https://invoice-generator.com','_blank')"
+          style="background:#1baf7a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;cursor:pointer;text-align:left;">
+          📄 Invoice-generator.com<br>
+          <span style="font-size:11px;opacity:.8;">Simple, no login required</span>
+        </button>
+        <button onclick="window.open('https://www.vyaparapp.in/receipt-maker','_blank')"
+          style="background:#eda100;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;cursor:pointer;text-align:left;">
+          📄 Vyapar Receipt Maker<br>
+          <span style="font-size:11px;opacity:.8;">Popular Indian accounting app</span>
+        </button>
+        <div style="background:#f5f5f3;border-radius:8px;padding:10px;font-size:11px;font-family:monospace;white-space:pre-wrap;max-height:150px;overflow-y:auto;">${clipText}</div>
+        <button onclick="this.closest('div').parentElement.remove()"
+          style="background:#e1e0d9;color:#333;border:none;border-radius:8px;padding:10px;font-size:14px;cursor:pointer;">
+          Close
+        </button>
+      </div>
+    </div>`;
+  modal.addEventListener('click', e => { if (e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
 function editPayment(paymentId, donorId) {
   // Reuse openPaymentModal but pre-fill with existing payment data
   openPaymentModal(donorId);
@@ -4746,6 +4913,7 @@ async function saveDonor() {
   const mobile  = $('dMobile').value.trim();
   const ref     = $('dRef').value.trim();
   const refMob  = $('dRefMobile').value.trim();
+  const panCard  = ($('dPAN').value || '').toUpperCase().trim() || null;
   const gift    = $('dGift').value;
   const numSuns = parseInt($('dSundays').value || 1);
   const amount  = parseInt($('dAmount').value  || 0);
@@ -4770,6 +4938,7 @@ async function saveDonor() {
     mobile,
     reference_by : ref || null,
     ref_mobile   : refMob || null,
+    pan_card     : panCard,
     gift_source  : gift,
     num_sundays  : numSuns,
     amount,
