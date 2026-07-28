@@ -4783,80 +4783,27 @@ function openOnlineReceiptFlow(donorId) {
   const payments = donorPayments[donorId] || [];
   const sundays  = donorSundays[donorId]  || [];
   const totalPaid= payments.reduce((s,p) => s+(p.amount||0), 0);
-  const latestPay= payments.sort((a,b) => (b.paid_date||'').localeCompare(a.paid_date||''))[0];
+  const latestPay= [...payments].sort((a,b) => (b.paid_date||'').localeCompare(a.paid_date||''))[0];
 
-  // Build pre-fill params for online receipt generator
-  // Common Indian receipt generators: vyapar, refrens, invoice-generator.com etc.
-  // Using refrens.com as it supports Indian GST receipts and is free
-  // Pre-fill via URL params where supported, else copy to clipboard
+  const params = new URLSearchParams({
+    donor_name    : d.full_name,
+    donor_mobile  : d.mobile,
+    donor_pan     : d.pan_card || '',
+    amount        : totalPaid,
+    amount_words  : numberToWords(totalPaid),
+    date          : latestPay?.paid_date || localDateStr(),
+    sundays       : d.num_sundays,
+    gift_source   : d.gift_source === 'self' ? 'Donor Gift' : 'Temple Gift',
+    payment_mode  : latestPay?.payment_mode || '',
+    txn_ref       : latestPay?.txn_ref || '',
+    from_org      : 'Vardhman Sanskar Dham',
+    from_location : myLocation?.name || 'SMPT',
+    from_city     : myLocation?.city || 'Dombivli',
+    fiscal_year   : d.fiscal_year || activeFY,
+  });
 
-  const receiptData = {
-    donor_name   : d.full_name,
-    donor_mobile : d.mobile,
-    donor_pan    : d.pan_card,
-    amount       : totalPaid,
-    date         : latestPay?.paid_date || new Date().toISOString().split('T')[0],
-    particulars  : `Bal Sanskar Prabhu Pooja - ${d.num_sundays} Sunday${d.num_sundays>1?'s':''}`,
-    from         : 'Vardhman Sanskar Dham, Dombivli',
-    payment_mode : latestPay?.payment_mode || 'cash',
-    reference    : latestPay?.txn_ref || '',
-  };
-
-  // Copy details to clipboard for easy paste into receipt generator
-  const clipText =
-`RECEIPT DETAILS — Copy & paste into receipt generator
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-From    : Vardhman Sanskar Dham, Dombivli
-To      : ${receiptData.donor_name}
-PAN     : ${receiptData.donor_pan}
-Mobile  : ${receiptData.donor_mobile}
-Amount  : Rs.${totalPaid.toLocaleString('en-IN')}
-Date    : ${fmtDate(receiptData.date)}
-Purpose : ${receiptData.particulars}
-Mode    : ${receiptData.payment_mode.toUpperCase()}
-Ref     : ${receiptData.reference || 'N/A'}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-  navigator.clipboard.writeText(clipText).then(() => {
-    toast('Receipt details copied to clipboard!');
-  }).catch(() => {});
-
-  // Show modal with options
-  const modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
-  modal.innerHTML = `
-    <div style="background:#fff;border-radius:16px;padding:24px;max-width:360px;width:90%;font-family:system-ui,sans-serif;">
-      <div style="font-size:16px;font-weight:700;margin-bottom:8px;">🧾 Online Receipt</div>
-      <div style="font-size:13px;color:#52514e;margin-bottom:16px;">
-        PAN available for <strong>${d.full_name}</strong>.<br>
-        Receipt details have been copied to clipboard.<br><br>
-        Choose a receipt generator:
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button onclick="window.open('https://www.refrens.com/receipt-maker','_blank')" 
-          style="background:#2a78d6;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;cursor:pointer;text-align:left;">
-          📄 Refrens.com — Free Indian Receipt Maker<br>
-          <span style="font-size:11px;opacity:.8;">Paste details from clipboard → Download PDF</span>
-        </button>
-        <button onclick="window.open('https://invoice-generator.com','_blank')"
-          style="background:#1baf7a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;cursor:pointer;text-align:left;">
-          📄 Invoice-generator.com<br>
-          <span style="font-size:11px;opacity:.8;">Simple, no login required</span>
-        </button>
-        <button onclick="window.open('https://www.vyaparapp.in/receipt-maker','_blank')"
-          style="background:#eda100;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;cursor:pointer;text-align:left;">
-          📄 Vyapar Receipt Maker<br>
-          <span style="font-size:11px;opacity:.8;">Popular Indian accounting app</span>
-        </button>
-        <div style="background:#f5f5f3;border-radius:8px;padding:10px;font-size:11px;font-family:monospace;white-space:pre-wrap;max-height:150px;overflow-y:auto;">${clipText}</div>
-        <button onclick="this.closest('div').parentElement.remove()"
-          style="background:#e1e0d9;color:#333;border:none;border-radius:8px;padding:10px;font-size:14px;cursor:pointer;">
-          Close
-        </button>
-      </div>
-    </div>`;
-  modal.addEventListener('click', e => { if (e.target===modal) modal.remove(); });
-  document.body.appendChild(modal);
+  const url = 'https://vsddombivli.github.io/Digital_Receipt_System/?' + params.toString();
+  window.open(url, '_blank');
 }
 
 function editPayment(paymentId, donorId) {
