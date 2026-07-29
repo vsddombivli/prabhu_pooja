@@ -4613,7 +4613,7 @@ async function generateCashMemoPDF(donorId) {
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a5' });
-  const pw = 148, ph = 210;
+  const pw = 148, ph = 150;
   const ml = 12, mr = 12, mt = 12;
 
   // ── Background ──────────────────────────────────
@@ -4642,7 +4642,7 @@ async function generateCashMemoPDF(donorId) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(200, 215, 255);
-  doc.text(receiptNo, pw - mr, 14, { align: 'center' });
+  doc.text(receiptNo, pw - mr, 14, { align: 'right' });
 
   // ── Receipt title bar ────────────────────────────
   let y = 22;
