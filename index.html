@@ -4632,17 +4632,17 @@ async function generateCashMemoPDF(donorId) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(200, 215, 255);
-  doc.text('Bal Sanskar Prabhu Pooja  |  Dombivli', ml, 14);
+  doc.text('Bal Sanskaran', ml, 14);
 
   // Receipt label top-right
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(255, 220, 100);
-  doc.text('RECEIPT', pw - mr, 9, { align: 'right' });
+  doc.text('RECEIPT NO.', pw - mr, 9, { align: 'right' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(200, 215, 255);
-  doc.text('No. ' + receiptNo, pw - mr, 14, { align: 'right' });
+  doc.text(receiptNo, pw - mr, 14, { align: 'right' });
 
   // ── Receipt title bar ────────────────────────────
   let y = 22;
@@ -4659,11 +4659,11 @@ async function generateCashMemoPDF(donorId) {
   doc.setLineWidth(0.3);
   // Left: From
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(100);
-  doc.text('FROM', ml, y);
-  doc.setFont('helvetica', 'normal'); doc.setTextColor(20);
-  doc.text('Vardhman Sanskar Dham, Dombivli', ml, y+5);
+  doc.text('Location', ml, y);
+  //doc.setFont('helvetica', 'normal'); doc.setTextColor(20);
+  //doc.text('Vardhman Sanskar Dham, Dombivli', ml, y+5);
   doc.setFontSize(7); doc.setTextColor(100);
-  doc.text('Location : ' + (myLocation?.name || 'SMPT'), ml, y+10);
+  doc.text((myLocation?.name || 'SMPT') + ' - ' (myLocation?.city || 'Dombivli'), ml, y+10);
 
   // Right: Date
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(100);
