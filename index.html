@@ -4663,7 +4663,7 @@ async function generateCashMemoPDF(donorId) {
   //doc.setFont('helvetica', 'normal'); doc.setTextColor(20);
   //doc.text('Vardhman Sanskar Dham, Dombivli', ml, y+5);
   doc.setFontSize(7); doc.setTextColor(100);
-  doc.text((myLocation?.name || 'SMPT') + ' - ' (myLocation?.city || 'Dombivli'), ml, y+10);
+  doc.text((myLocation?.name || 'SMPT') + ' - ' + (myLocation?.city || 'Dombivli'), ml, y+10);
 
   // Right: Date
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(100);
