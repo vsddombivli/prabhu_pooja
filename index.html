@@ -4642,7 +4642,7 @@ async function generateCashMemoPDF(donorId) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(200, 215, 255);
-  doc.text(receiptNo, pw - mr, 14, { align: 'right' });
+  doc.text(receiptNo, pw - mr, 14, { align: 'center' });
 
   // ── Receipt title bar ────────────────────────────
   let y = 22;
@@ -4662,8 +4662,8 @@ async function generateCashMemoPDF(donorId) {
   doc.text('Location', ml, y);
   //doc.setFont('helvetica', 'normal'); doc.setTextColor(20);
   //doc.text('Vardhman Sanskar Dham, Dombivli', ml, y+5);
-  doc.setFontSize(7); doc.setTextColor(100);
-  doc.text((myLocation?.name || 'SMPT') + ' - ' + (myLocation?.city || 'Dombivli'), ml, y+10);
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(20);
+  doc.text((myLocation?.name || 'SMPT') + ' - ' + (myLocation?.city || 'Dombivli'), ml, y+5);
 
   // Right: Date
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(100);
@@ -4672,7 +4672,7 @@ async function generateCashMemoPDF(donorId) {
   doc.text(dateStr, pw-mr, y+5, { align:'right' });
 
   // Divider
-  y += 15;
+  y += 10;
   doc.setDrawColor(200, 210, 240); doc.setLineWidth(0.5);
   doc.line(ml, y, pw-mr, y);
 
@@ -4702,12 +4702,11 @@ async function generateCashMemoPDF(donorId) {
   doc.text('AMOUNT (Rs.)', pw-mr-3, y+5.5, { align:'right' });
 
   // ── Table row ────────────────────────────────────
-  y += 11;
+  y += 12;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(20);
   doc.text('1', ml+3, y);
-  const particular = 'Bal Sanskar Prabhu Pooja';
-  const subParticular = d.num_sundays + ' Sunday' + (d.num_sundays>1?'s':'') +
-                        '  |  ' + (d.gift_source==='self' ? 'Donor gift' : 'Temple gift');
+  const particular = 'Prabhu Pooja';
+  const subParticular = d.num_sundays + ' Sunday' + (d.num_sundays>1?'s':'');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
   doc.text(particular, ml+15, y);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100);
@@ -4717,7 +4716,7 @@ async function generateCashMemoPDF(donorId) {
 
   // Empty lines
   doc.setDrawColor(230); doc.setLineWidth(0.2);
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 2; i++) {
     y += 10;
     doc.line(ml, y, pw-mr, y);
   }
@@ -4755,7 +4754,7 @@ async function generateCashMemoPDF(donorId) {
   doc.text('Thank You for your generous contribution!', pw/2, y, { align:'center' });
   y += 5;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 80, 160);
-  doc.text('Vardhman Sanskar Dham  |  Dombivli', pw/2, y, { align:'center' });
+  doc.text('Vardhman Sanskar Dham', pw/2, y, { align:'center' });
 
   // ── Watermark ────────────────────────────────────
   doc.setFont('helvetica', 'bold');
