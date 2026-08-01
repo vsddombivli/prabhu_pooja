@@ -4762,19 +4762,70 @@ async function generateCashMemoPDF(donorId) {
   doc.setTextColor(230, 235, 250);
   doc.text('VSD', pw/2, ph/2 + 10, { align:'center', angle:30 });
 
-  // Open PDF
+  // Save PDF to device
   const pdfBlob = doc.output('blob');
   const pdfUrl  = URL.createObjectURL(pdfBlob);
-  window.open(pdfUrl, '_blank');
+  const fileName = `Receipt_${receiptNo}.pdf`;
 
-  // WhatsApp share
-  setTimeout(() => {
-    const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${receiptNo}\nDate: ${dateStr}\n\nThank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
-    const waUrl = `https://wa.me/91${d.mobile}?text=${encodeURIComponent(waMsg)}`;
-    if (confirm('PDF opened. Send WhatsApp message to ' + d.full_name + '?')) {
-      window.open(waUrl, '_blank');
+  // Auto-download
+  const a = document.createElement('a');
+  a.href = pdfUrl; a.download = fileName;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+
+  // Show share panel
+  const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${receiptNo}\nDate: ${dateStr}\n\nThank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
+  const waUrl = `https://wa.me/91${d.mobile.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-end;';
+  panel.innerHTML = `
+    <div style="background:#fff;width:100%;border-radius:16px 16px 0 0;padding:20px;font-family:system-ui,sans-serif;">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px;">✅ Receipt downloaded!</div>
+      <div style="font-size:12px;color:#666;margin-bottom:16px;">
+        <strong>${fileName}</strong> saved to your downloads.<br>
+        To send PDF on WhatsApp: open WhatsApp → attach file from Downloads.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <a href="${waUrl}" target="_blank"
+          style="background:#25D366;color:#fff;border-radius:10px;padding:13px 16px;text-decoration:none;font-size:14px;font-weight:600;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:20px;">💬</span>
+          <div>
+            <div>Send WhatsApp text to ${d.full_name}</div>
+            <div style="font-size:11px;opacity:.85;">Opens WhatsApp with receipt summary (text only)</div>
+          </div>
+        </a>
+        <button onclick="navigator.share ? navigator.share({title:'Receipt ${receiptNo}',files:[new File([${JSON.stringify(await blobToBase64Note())}],'${fileName}',{type:'application/pdf'})]}).catch(()=>{}) : alert('Use the downloaded file from your Downloads folder')"
+          style="background:#2a78d6;color:#fff;border:none;border-radius:10px;padding:13px 16px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:20px;">📤</span>
+          <div style="text-align:left;">
+            <div>Share PDF file</div>
+            <div style="font-size:11px;opacity:.85;">Share via WhatsApp, Drive, Email etc.</div>
+          </div>
+        </button>
+        <button onclick="this.closest('div').parentElement.remove()"
+          style="background:#f0f0f0;border:none;border-radius:10px;padding:12px;font-size:14px;cursor:pointer;">Close</button>
+      </div>
+    </div>`;
+  panel.addEventListener('click', e => { if(e.target===panel) panel.remove(); });
+
+  // Use Web Share API for direct file sharing (works on Android Chrome)
+  const shareBtn = panel.querySelector('button');
+  shareBtn.onclick = async () => {
+    if (navigator.share && navigator.canShare) {
+      try {
+        const file = new File([pdfBlob], fileName, { type:'application/pdf' });
+        if (navigator.canShare({ files:[file] })) {
+          await navigator.share({ title: 'Receipt ' + receiptNo, files: [file] });
+          panel.remove(); return;
+        }
+      } catch(e) { /* fall through */ }
     }
-  }, 600);
+    // Fallback: open PDF in new tab
+    window.open(pdfUrl, '_blank');
+  };
+
+  document.body.appendChild(panel);
 }
 
 function openOnlineReceiptFlow(donorId) {
