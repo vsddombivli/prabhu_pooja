@@ -1074,6 +1074,67 @@ function initSB() {
 initSB();
 
 // ═══════════════════════════════════════════════════
+// CLOUDINARY — media storage (kids & gift photos)
+// ═══════════════════════════════════════════════════
+const CLOUDINARY_CLOUD_NAME   = 'ixycuksb';
+const CLOUDINARY_PRESET_KIDS  = 'tqexowaz';
+const CLOUDINARY_PRESET_GIFTS = 'yh6s2mpr';
+// Set this to your deployed edge function URL once created (Step 3 below).
+// Example: 'https://nyytdgrmwleemfaiaeqw.supabase.co/functions/v1/cloudinary-delete'
+const CLOUDINARY_DELETE_FN_URL = '';
+
+async function uploadToCloudinary(blob, folder, preset) {
+  const fd = new FormData();
+  fd.append('file', blob);
+  fd.append('upload_preset', preset);
+  fd.append('folder', folder);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+    method: 'POST',
+    body: fd
+  });
+  const data = await res.json();
+  if (!res.ok || !data.secure_url) {
+    throw new Error(data?.error?.message || 'Cloudinary upload failed');
+  }
+  return data; // { secure_url, public_id, ... }
+}
+
+// Extracts the Cloudinary public_id (incl. folder) from a secure_url, e.g.
+// https://res.cloudinary.com/ixycuksb/image/upload/v123456/prabhu-pooja/kids/abc.jpg
+// -> "prabhu-pooja/kids/abc"
+function cloudinaryPublicIdFromUrl(url) {
+  try {
+    const afterUpload = url.split('/image/upload/')[1];
+    if (!afterUpload) return null;
+    const parts = afterUpload.split('/');
+    if (/^v\d+$/.test(parts[0])) parts.shift(); // drop version segment if present
+    const last = parts.pop();
+    const noExt = last.replace(/\.[a-zA-Z0-9]+$/, '');
+    return [...parts, noExt].join('/');
+  } catch { return null; }
+}
+
+// Best-effort delete on Cloudinary via the edge function. Never blocks the
+// calling flow — if it fails, we just log it (an orphaned file on Cloudinary
+// costs nothing meaningful on the free tier).
+async function deleteFromCloudinary(url) {
+  if (!url || !CLOUDINARY_DELETE_FN_URL || !sb) return;
+  const publicId = cloudinaryPublicIdFromUrl(url);
+  if (!publicId) return;
+  try {
+    const { data: sess } = await sb.auth.getSession();
+    await fetch(CLOUDINARY_DELETE_FN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sess?.session?.access_token || ''}`
+      },
+      body: JSON.stringify({ public_id: publicId })
+    });
+  } catch (e) { console.warn('Cloudinary delete failed (non-blocking):', e); }
+}
+
+// ═══════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════
 let me = null;           // current user profile row
@@ -2392,13 +2453,15 @@ async function saveKid() {
   btn.innerHTML = '<span class="spin"></span>'; btn.disabled = true;
 
   let photo_url = null;
-  if (photo && sb) {
+  if (photo) {
     const blob = await compressImage(photo).catch(() => photo);
-    const path = `${myLocation.id}/${Date.now()}.jpg`;
-    const { data: up } = await sb.storage.from('kid-photos').upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
-    if (up) {
-      const { data: ul } = sb.storage.from('kid-photos').getPublicUrl(path);
-      photo_url = ul.publicUrl;
+    try {
+      const cdRes = await uploadToCloudinary(blob, `prabhu-pooja/kids/${myLocation.id}`, CLOUDINARY_PRESET_KIDS);
+      photo_url = cdRes.secure_url;
+    } catch (e) {
+      showErr('kidModalErr', 'Photo upload failed: ' + e.message);
+      btn.innerHTML = 'Save'; btn.disabled = false;
+      return;
     }
   }
 
@@ -2674,16 +2737,16 @@ async function doKidPhotoUpload(inp, id) {
   const file = inp.files[0]; if (!file) return;
   toast('Uploading…');
   const blob = await compressImage(file).catch(() => file);
-  const path = `${myLocation.id}/${id}.jpg`;
-  // Remove existing file first to avoid 400 on overwrite
-  await sb.storage.from('kid-photos').remove([path]);
-  const { error } = await sb.storage.from('kid-photos').upload(path, blob, { contentType: 'image/jpeg' });
-  if (error) { toast('Upload failed: ' + error.message); return; }
-  const { data: ul } = sb.storage.from('kid-photos').getPublicUrl(path);
-  const photoUrl = ul.publicUrl + '?t=' + Date.now();
-  await sb.from('kids').update({ photo_url: photoUrl }).eq('id', id);
   const k = kids.find(x => x.id === id);
+  const oldUrl = k?.photo_url || null;
+  let photoUrl;
+  try {
+    const cdRes = await uploadToCloudinary(blob, `prabhu-pooja/kids/${myLocation.id}`, CLOUDINARY_PRESET_KIDS);
+    photoUrl = cdRes.secure_url;
+  } catch (e) { toast('Upload failed: ' + e.message); return; }
+  await sb.from('kids').update({ photo_url: photoUrl }).eq('id', id);
   if (k) k.photo_url = photoUrl;
+  if (oldUrl) deleteFromCloudinary(oldUrl); // best-effort, non-blocking
   goTo('kids');
   renderKidList();
   toast('Photo updated ✓');
@@ -2693,11 +2756,11 @@ async function removeKidPhoto(id) {
   const picker = document.getElementById('kidPhotoPicker');
   if (picker) picker.remove();
   confirm2('Remove this kid\'s photo?', async () => {
-    const path = `${myLocation.id}/${id}.jpg`;
-    await sb.storage.from('kid-photos').remove([path]);
-    await sb.from('kids').update({ photo_url: null }).eq('id', id);
     const k = kids.find(x => x.id === id);
+    const oldUrl = k?.photo_url || null;
+    await sb.from('kids').update({ photo_url: null }).eq('id', id);
     if (k) k.photo_url = null;
+    if (oldUrl) deleteFromCloudinary(oldUrl); // best-effort, non-blocking
     renderKidList();
     toast('Photo removed');
   });
@@ -5479,6 +5542,7 @@ async function deleteGift(id) {
   confirm2('Delete "' + g.name + '"? This cannot be undone.', async () => {
     const { error } = await sb.from('gifts').delete().eq('id', id);
     if (error) { toast('Error: ' + error.message); return; }
+    if (g.photo_url) deleteFromCloudinary(g.photo_url); // best-effort
     gifts = gifts.filter(x => x.id !== id);
     giftStockSet.delete(id);
     renderGiftGallery();
@@ -5560,31 +5624,22 @@ async function saveGift() {
   if (!mrp||mrp <= 0)  { showErr('giftModalErr','Enter valid MRP');    return; }
   const btn = $('giftSaveBtn'); btn.innerHTML = '<span class="spin"></span>'; btn.disabled = true;
   let photo_url = id ? (gifts.find(x=>x.id===id)?.photo_url||null) : null;
-  if (photoFile && sb) {
+  const oldGiftPhotoUrl = photo_url;
+  if (photoFile) {
     const blob = await compressImage(photoFile).catch(() => photoFile);
-    const path = 'gifts/' + Date.now() + '.jpg';
-    const { data: up, error: uploadError } = await sb.storage.from('gift-photos').upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
-    if (uploadError) {
-      showErr('giftModalErr', 'Photo upload failed: ' + uploadError.message);
+    try {
+      const cdRes = await uploadToCloudinary(blob, 'prabhu-pooja/gifts', CLOUDINARY_PRESET_GIFTS);
+      photo_url = cdRes.secure_url;
+    } catch (e) {
+      showErr('giftModalErr', 'Photo upload failed: ' + e.message);
       btn.innerHTML = 'Save gift'; btn.disabled = false;
       return;
     }
-    if (!up) {
-      showErr('giftModalErr', 'Photo upload failed: no response from storage');
-      btn.innerHTML = 'Save gift'; btn.disabled = false;
-      return;
-    }
-    const { data: ul, error: publicError } = sb.storage.from('gift-photos').getPublicUrl(path);
-    if (publicError || !ul?.publicUrl) {
-      showErr('giftModalErr', 'Could not get gift photo URL.');
-      btn.innerHTML = 'Save gift'; btn.disabled = false;
-      return;
-    }
-    photo_url = ul.publicUrl;
   }
   const obj = { name, category_id:catId, vendor_id:vendorId, mrp, description:desc||null, uploaded_by:me.id, ...(photo_url && { photo_url }) };
   if (id) { const { error } = await sb.from('gifts').update(obj).eq('id', id); if (error) { showErr('giftModalErr',error.message); btn.innerHTML='Save gift'; btn.disabled=false; return; } }
   else    { const { data:nd, error } = await sb.from('gifts').insert(obj).select().single(); if (error) { showErr('giftModalErr',error.message); btn.innerHTML='Save gift'; btn.disabled=false; return; } }
+  if (photoFile && oldGiftPhotoUrl && oldGiftPhotoUrl !== photo_url) deleteFromCloudinary(oldGiftPhotoUrl); // best-effort
   await loadGiftData(); renderGiftGallery();
   btn.innerHTML='Save gift'; btn.disabled=false; closeModal('giftModal'); toast(id?'Gift updated':'Gift added!');
 }
