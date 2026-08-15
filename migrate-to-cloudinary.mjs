@@ -6,7 +6,7 @@
 //
 // SETUP
 //   npm init -y
-//   npm install @supabase/supabase-js node-fetch form-data
+//   npm install @supabase/supabase-js node-fetch form-data ws
 //
 // RUN
 //   SUPABASE_URL=https://nyytdgrmwleemfaiaeqw.supabase.co \
@@ -19,6 +19,18 @@
 // NOTE: Use the SERVICE ROLE key (Project Settings -> API), not the anon
 // key, since we need to read/update every row regardless of RLS, and
 // download files directly from Storage. Never expose this key in the app.
+
+// Polyfill WebSocket for Node < 22 (supabase-js's realtime module expects
+// a global WebSocket even though this script never uses realtime).
+import WebSocket from 'ws';
+if (!globalThis.WebSocket) globalThis.WebSocket = WebSocket;
+
+// Fix for a common Node.js "fetch failed" issue: Node's fetch (undici)
+// tries IPv6 first, and on many networks IPv6 routing to a host silently
+// fails even though IPv4 (what `curl` uses by default) works fine.
+// Forcing IPv4-first resolution fixes this in most cases.
+import dns from 'node:dns';
+dns.setDefaultResultOrder('ipv4first');
 
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
@@ -37,7 +49,35 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !CLOUDINARY_CLOUD_NAME) {
   process.exit(1);
 }
 
+// Sanity check: catch empty/whitespace-only keys and obvious anon-key mixups
+// before making any network calls.
+console.log('SUPABASE_URL:', SUPABASE_URL);
+console.log('SUPABASE_SERVICE_ROLE_KEY length:', SUPABASE_SERVICE_ROLE_KEY.trim().length, '(should be several hundred chars)');
+if (SUPABASE_SERVICE_ROLE_KEY.trim().length < 100) {
+  console.error('SUPABASE_SERVICE_ROLE_KEY looks too short/empty — did the env var actually get set? See troubleshooting steps in the chat.');
+  process.exit(1);
+}
+
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+async function preflightCheck() {
+  console.log('\nRunning network preflight check against Supabase...');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+      headers: { apikey: SUPABASE_SERVICE_ROLE_KEY },
+    });
+    console.log('Preflight OK — HTTP status:', res.status);
+  } catch (e) {
+    console.error('Preflight FAILED. Raw error below — this tells us the real cause:');
+    console.error(e);
+    if (e.cause) console.error('cause:', e.cause);
+    console.error('\nCommon fixes:');
+    console.error('  - You are behind a corporate VPN / firewall / antivirus with SSL inspection -> try a different network (e.g. mobile hotspot).');
+    console.error('  - Node version issue -> try `node -v` (use Node 18 or 20 LTS).');
+    console.error('  - Corporate proxy required -> set HTTPS_PROXY env var to your proxy URL.');
+    process.exit(1);
+  }
+}
 
 async function uploadToCloudinary(buffer, folder, preset) {
   const form = new FormData();
@@ -65,7 +105,11 @@ async function migrateTable(table, folder, preset) {
     .from(table)
     .select('id, photo_url')
     .not('photo_url', 'is', null);
-  if (error) { console.error(`Failed to fetch ${table}:`, error.message); return; }
+  if (error) {
+    console.error(`Failed to fetch ${table}:`, error.message);
+    if (error.cause) console.error('  Underlying cause:', error.cause);
+    return;
+  }
 
   console.log(`Found ${rows.length} rows with a photo.`);
   let migrated = 0, skipped = 0, failed = 0;
@@ -93,6 +137,7 @@ async function migrateTable(table, folder, preset) {
 }
 
 async function main() {
+  await preflightCheck();
   await migrateTable('kids', 'prabhu-pooja/kids', CLOUDINARY_PRESET_KIDS);
   await migrateTable('gifts', 'prabhu-pooja/gifts', CLOUDINARY_PRESET_GIFTS);
   console.log('\nDone. Spot-check a few photo_url values in Supabase before deleting the old buckets.');
