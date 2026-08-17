@@ -5279,9 +5279,10 @@ async function savePayment() {
   // by year at a glance.
   let screenshot_url = null;
   const shotFile = (mode === 'online' && $('payScreenshot')) ? $('payScreenshot').files[0] : null;
+  const oldScreenshotUrl = editPayId ? ((donorPayments[donorId]||[]).find(p => p.id === editPayId)?.screenshot_url || null) : null;
   if (shotFile) {
     const donorForShot = donors.find(x => x.id === donorId);
-    const donorFolderName = (donorForShot?.name || 'unknown')
+    const donorFolderName = (donorForShot?.full_name || 'unknown')
       .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
     const fy = currentFY(); // e.g. "2026-27", based on myLocation.fy_start_month
     const publicId = `${fy}_${donorFolderName}_${Date.now()}`;
@@ -5325,6 +5326,7 @@ async function savePayment() {
     if (!error) {
       const idx = (donorPayments[donorId]||[]).findIndex(p => p.id === editPayId);
       if (idx >= 0) Object.assign(donorPayments[donorId][idx], { amount, payment_mode:mode, paid_date:date, received_by:recvBy||null, notes:notes||null, txn_ref:txnRef||null, ...(screenshot_url ? { screenshot_url } : {}) });
+      if (shotFile && oldScreenshotUrl && oldScreenshotUrl !== screenshot_url) deleteFromCloudinary(oldScreenshotUrl); // best-effort
     }
     $('payDonorId').dataset.editPaymentId = '';
   } else {
