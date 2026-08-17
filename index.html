@@ -1087,15 +1087,17 @@ initSB();
 const CLOUDINARY_CLOUD_NAME   = 'ixycuksb';
 const CLOUDINARY_PRESET_KIDS  = 'tqexowaz';
 const CLOUDINARY_PRESET_GIFTS = 'yh6s2mpr';
+const CLOUDINARY_PRESET_DONORS = 'k5tl2l8t';
 // Set this to your deployed edge function URL once created (Step 3 below).
 // Example: 'https://nyytdgrmwleemfaiaeqw.supabase.co/functions/v1/cloudinary-delete'
 const CLOUDINARY_DELETE_FN_URL = '';
 
-async function uploadToCloudinary(blob, folder, preset, resourceType = 'image') {
+async function uploadToCloudinary(blob, folder, preset, resourceType = 'image', publicId = null) {
   const fd = new FormData();
   fd.append('file', blob);
   fd.append('upload_preset', preset);
   fd.append('folder', folder);
+  if (publicId) fd.append('public_id', publicId);
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, {
     method: 'POST',
     body: fd
@@ -5266,16 +5268,20 @@ async function savePayment() {
   if (!date)                  { showErr('payModalErr','Enter payment date');    return; }
 
   // Upload payment screenshot (online payments only) to Cloudinary under a
-  // per-donor folder before saving the payment record.
+  // per-donor folder, named with the fiscal year (per this location's FY
+  // setting, based on today's upload date) so screenshots are identifiable
+  // by year at a glance.
   let screenshot_url = null;
   const shotFile = (mode === 'online' && $('payScreenshot')) ? $('payScreenshot').files[0] : null;
   if (shotFile) {
     const donorForShot = donors.find(x => x.id === donorId);
     const donorFolderName = (donorForShot?.name || 'unknown')
       .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
+    const fy = currentFY(); // e.g. "2026-27", based on myLocation.fy_start_month
+    const publicId = `${fy}_${donorFolderName}_${Date.now()}`;
     try {
       const blob = await compressImage(shotFile).catch(() => shotFile);
-      const cdRes = await uploadToCloudinary(blob, `prabhu-pooja/payment-screenshots/${donorFolderName}`, CLOUDINARY_PRESET_GIFTS);
+      const cdRes = await uploadToCloudinary(blob, `prabhu-pooja/donors/${donorFolderName}`, CLOUDINARY_PRESET_DONORS, 'image', publicId);
       screenshot_url = cdRes.secure_url;
     } catch (e) {
       showErr('payModalErr', 'Screenshot upload failed: ' + e.message);
