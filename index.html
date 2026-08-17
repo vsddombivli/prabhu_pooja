@@ -1094,7 +1094,13 @@ const CLOUDINARY_DELETE_FN_URL = '';
 
 async function uploadToCloudinary(blob, folder, preset, resourceType = 'image', publicId = null) {
   const fd = new FormData();
-  fd.append('file', blob);
+  // Always give the file part a real filename — a bare Blob (e.g. from
+  // canvas compression) has no name and browsers default it to "blob",
+  // which some Cloudinary presets (with "use filename as public ID") will
+  // pick up instead of our explicit public_id below.
+  const ext = resourceType === 'video' ? 'mp4' : 'jpg';
+  const filename = (publicId ? publicId.split('/').pop() : 'upload') + '.' + ext;
+  fd.append('file', blob, filename);
   fd.append('upload_preset', preset);
   fd.append('folder', folder);
   if (publicId) fd.append('public_id', publicId);
