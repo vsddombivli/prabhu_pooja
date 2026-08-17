@@ -189,7 +189,7 @@ select.fi{cursor:pointer;}
 
 .gift-card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;transition:box-shadow .15s;cursor:pointer;}
 .gift-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.1);}
-.gift-img-wrap{width:100%;aspect-ratio:4/3;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:40px;color:#d1d5db;overflow:hidden;}
+.gift-img-wrap{width:100%;aspect-ratio:4/3;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:40px;color:#d1d5db;overflow:hidden;position:relative;}
 .gift-img-wrap img{width:100%;height:100%;object-fit:cover;}
 .gift-body{padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:4px;}
 .gift-name{font-size:14px;font-weight:700;line-height:1.3;}
@@ -713,6 +713,9 @@ select.fi{cursor:pointer;}
             <option value="12">December</option>
           </select>
         </div>
+        <div class="fg"><label class="fl">Google Drive folder link (event photos/videos for parents)</label>
+          <input class="fi" type="url" id="cfgGDriveUrl" placeholder="https://drive.google.com/drive/folders/..."/>
+        </div>
         <button class="btn btn-green" onclick="saveLocationEventDay()">Save location settings</button>
       </div>
       <div class="card" id="eventScheduleCard">
@@ -1015,6 +1018,11 @@ select.fi{cursor:pointer;}
       <label class="fl" id="payRefLabel">Transaction reference</label>
       <input class="fi" id="payRef" placeholder="UTR / Cheque no. / Transaction ID"/>
     </div>
+    <div class="fg" id="payScreenshotWrap" style="display:none;">
+      <label class="fl">Payment screenshot</label>
+      <input class="fi" type="file" id="payScreenshot" accept="image/*"/>
+      <div id="payScreenshotPreview" style="margin-top:6px;"></div>
+    </div>
     <div class="fg"><label class="fl">Notes</label><input class="fi" id="payNotes" placeholder="Optional"/></div>
     <div id="payModalErr" class="alert alert-red"></div>
   </div>
@@ -1081,14 +1089,14 @@ const CLOUDINARY_PRESET_KIDS  = 'tqexowaz';
 const CLOUDINARY_PRESET_GIFTS = 'yh6s2mpr';
 // Set this to your deployed edge function URL once created (Step 3 below).
 // Example: 'https://nyytdgrmwleemfaiaeqw.supabase.co/functions/v1/cloudinary-delete'
-const CLOUDINARY_DELETE_FN_URL = 'https://nyytdgrmwleemfaiaeqw.supabase.co/functions/v1/cloudinary-delete';
+const CLOUDINARY_DELETE_FN_URL = '';
 
-async function uploadToCloudinary(blob, folder, preset) {
+async function uploadToCloudinary(blob, folder, preset, resourceType = 'image') {
   const fd = new FormData();
   fd.append('file', blob);
   fd.append('upload_preset', preset);
   fd.append('folder', folder);
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, {
     method: 'POST',
     body: fd
   });
@@ -1102,9 +1110,10 @@ async function uploadToCloudinary(blob, folder, preset) {
 // Extracts the Cloudinary public_id (incl. folder) from a secure_url, e.g.
 // https://res.cloudinary.com/ixycuksb/image/upload/v123456/prabhu-pooja/kids/abc.jpg
 // -> "prabhu-pooja/kids/abc"
+// Also works for video URLs (…/video/upload/…).
 function cloudinaryPublicIdFromUrl(url) {
   try {
-    const afterUpload = url.split('/image/upload/')[1];
+    const afterUpload = url.split('/upload/')[1];
     if (!afterUpload) return null;
     const parts = afterUpload.split('/');
     if (/^v\d+$/.test(parts[0])) parts.shift(); // drop version segment if present
@@ -1114,6 +1123,12 @@ function cloudinaryPublicIdFromUrl(url) {
   } catch { return null; }
 }
 
+// Determines the Cloudinary resource_type ('image' or 'video') from a
+// secure_url so deletes hit the correct endpoint.
+function cloudinaryResourceTypeFromUrl(url) {
+  return url && url.includes('/video/upload/') ? 'video' : 'image';
+}
+
 // Best-effort delete on Cloudinary via the edge function. Never blocks the
 // calling flow — if it fails, we just log it (an orphaned file on Cloudinary
 // costs nothing meaningful on the free tier).
@@ -1121,6 +1136,7 @@ async function deleteFromCloudinary(url) {
   if (!url || !CLOUDINARY_DELETE_FN_URL || !sb) return;
   const publicId = cloudinaryPublicIdFromUrl(url);
   if (!publicId) return;
+  const resourceType = cloudinaryResourceTypeFromUrl(url);
   try {
     const { data: sess } = await sb.auth.getSession();
     await fetch(CLOUDINARY_DELETE_FN_URL, {
@@ -1129,7 +1145,7 @@ async function deleteFromCloudinary(url) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${sess?.session?.access_token || ''}`
       },
-      body: JSON.stringify({ public_id: publicId })
+      body: JSON.stringify({ public_id: publicId, resource_type: resourceType })
     });
   } catch (e) { console.warn('Cloudinary delete failed (non-blocking):', e); }
 }
@@ -1472,6 +1488,8 @@ function refreshLocationSettingsFields() {
   const fyMonthEl = $('cfgFYMonth');
   if (eventDayEl) eventDayEl.value = String(myLocation.event_day ?? 0);
   if (fyMonthEl) fyMonthEl.value = String(myLocation.fy_start_month ?? 4);
+  const gdriveEl = $('cfgGDriveUrl');
+  if (gdriveEl) gdriveEl.value = myLocation.gdrive_folder_url || '';
   loadQRSettings();
 }
 
@@ -3496,7 +3514,7 @@ async function loadParentKids() {
   if (!sb || !me) return;
   // Find all kids matching parent mobile across all locations
   const { data: kd, error } = await sb.from('kids')
-    .select('*, locations(name,city)')
+    .select('*, locations(name,city,gdrive_folder_url)')
     .eq('mobile', me.mobile)
     .eq('is_active', true);
   if (error) { toast('Error: ' + error.message); return; }
@@ -3570,6 +3588,10 @@ async function loadParentKids() {
           <div class="kid-card-name">${k.full_name}</div>
           <div class="kid-card-sub">${age(k.dob)} · ${k.locations?.name || ''} · #${k.kid_no}</div>
         </div>
+        ${k.locations?.gdrive_folder_url ? `
+          <a href="${k.locations.gdrive_folder_url}" target="_blank" rel="noopener"
+             style="margin-left:auto;align-self:center;" class="btn btn-gray" >📁 Event Photos & Videos</a>
+        ` : ''}
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;text-align:center;">
         <div><div style="font-size:22px;font-weight:700;color:var(--green);">${totalPts}</div><div style="font-size:11px;color:var(--gray);">Total points</div></div>
@@ -3756,12 +3778,14 @@ async function saveLocationEventDay() {
   if (!sb || !myLocation) { toast('No location loaded'); return; }
   const eventDay  = parseInt($('cfgEventDay').value);
   const fyMonth   = parseInt($('cfgFYMonth').value || 4);
+  const gdriveUrl = $('cfgGDriveUrl') ? $('cfgGDriveUrl').value.trim() : '';
   const { error } = await sb.from('locations')
-    .update({ event_day: eventDay, fy_start_month: fyMonth })
+    .update({ event_day: eventDay, fy_start_month: fyMonth, gdrive_folder_url: gdriveUrl || null })
     .eq('id', myLocation.id);
   if (error) { toast('Save failed: ' + error.message); return; }
   myLocation.event_day       = eventDay;
   myLocation.fy_start_month  = fyMonth;
+  myLocation.gdrive_folder_url = gdriveUrl || null;
   toast('Location settings saved');
 }
 async function saveEventReason(date) {
@@ -4520,6 +4544,7 @@ function renderDonorList() {
         ${recv ? `<span style="font-size:11px;color:var(--gray);">via ${recv.full_name}</span>` : ''}
         ${p.notes ? `<span style="font-size:11px;color:var(--gray);">· ${p.notes}</span>` : ''}
         ${p.txn_ref ? `<span style="font-size:11px;color:var(--gray);">Ref: ${p.txn_ref}</span>` : ''}
+        ${p.screenshot_url ? `<a href="${p.screenshot_url}" target="_blank" rel="noopener" style="font-size:11px;color:var(--blue);text-decoration:underline;">📷 Screenshot</a>` : ''}
         ${role !== 'volunteer' ? `
           <span style="margin-left:auto;display:flex;gap:4px;">
             <button class="btn btn-gray" style="padding:2px 7px;font-size:11px;" onclick="editPayment('${p.id}','${d.id}')">Edit</button>
@@ -5178,14 +5203,18 @@ function togglePayRefField() {
   const mode = $('payMode').value;
   const wrap = $('payRefWrap');
   const label = $('payRefLabel');
+  const shotWrap = $('payScreenshotWrap');
   if (mode === 'online') {
     wrap.style.display = 'block';
     label.textContent = 'UTR / Transaction ID *';
+    shotWrap.style.display = 'block';
   } else if (mode === 'cheque') {
     wrap.style.display = 'block';
     label.textContent = 'Cheque number *';
+    shotWrap.style.display = 'none';
   } else {
     wrap.style.display = 'none';
+    shotWrap.style.display = 'none';
   }
 }
 // ── PAYMENTS ─────────────────────────────────────────
@@ -5196,6 +5225,8 @@ function openPaymentModal(donorId) {
   $('payDate').value = toDisplayDate(TODAY);
   $('payDateISO').value = TODAY;
   $('payRef').value = '';
+  if ($('payScreenshot')) $('payScreenshot').value = '';
+  if ($('payScreenshotPreview')) $('payScreenshotPreview').innerHTML = '';
   togglePayRefField();
   hideErr('payModalErr');
 
@@ -5234,6 +5265,24 @@ async function savePayment() {
   if (!amount || amount <= 0) { showErr('payModalErr','Enter a valid amount'); return; }
   if (!date)                  { showErr('payModalErr','Enter payment date');    return; }
 
+  // Upload payment screenshot (online payments only) to Cloudinary under a
+  // per-donor folder before saving the payment record.
+  let screenshot_url = null;
+  const shotFile = (mode === 'online' && $('payScreenshot')) ? $('payScreenshot').files[0] : null;
+  if (shotFile) {
+    const donorForShot = donors.find(x => x.id === donorId);
+    const donorFolderName = (donorForShot?.name || 'unknown')
+      .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
+    try {
+      const blob = await compressImage(shotFile).catch(() => shotFile);
+      const cdRes = await uploadToCloudinary(blob, `prabhu-pooja/payment-screenshots/${donorFolderName}`, CLOUDINARY_PRESET_GIFTS);
+      screenshot_url = cdRes.secure_url;
+    } catch (e) {
+      showErr('payModalErr', 'Screenshot upload failed: ' + e.message);
+      return;
+    }
+  }
+
   // Block overpayment beyond remaining balance
   const donorObj = donors.find(x => x.id === donorId);
   if (donorObj) {
@@ -5259,10 +5308,11 @@ async function savePayment() {
     ({ error } = await sb.from('donor_payments').update({
       amount, payment_mode: mode, paid_date: date,
       received_by: recvBy||null, notes: notes||null, txn_ref: txnRef||null,
+      ...(screenshot_url ? { screenshot_url } : {}),
     }).eq('id', editPayId));
     if (!error) {
       const idx = (donorPayments[donorId]||[]).findIndex(p => p.id === editPayId);
-      if (idx >= 0) Object.assign(donorPayments[donorId][idx], { amount, payment_mode:mode, paid_date:date, received_by:recvBy||null, notes:notes||null, txn_ref:txnRef||null });
+      if (idx >= 0) Object.assign(donorPayments[donorId][idx], { amount, payment_mode:mode, paid_date:date, received_by:recvBy||null, notes:notes||null, txn_ref:txnRef||null, ...(screenshot_url ? { screenshot_url } : {}) });
     }
     $('payDonorId').dataset.editPaymentId = '';
   } else {
@@ -5275,6 +5325,7 @@ async function savePayment() {
     received_by : recvBy || null,
     notes       : notes  || null,
     txn_ref     : txnRef || null,
+    screenshot_url: screenshot_url || null,
   }).select().single());
   }
 
@@ -5504,6 +5555,9 @@ function renderGiftGallery() {
     const img     = g.photo_url
       ? '<img src="' + g.photo_url + '" alt="' + g.name + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;"/>'
       : '<span style="font-size:40px;">&#127873;</span>';
+    const videoBadge = g.video_url
+      ? '<span style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:2px 6px;border-radius:10px;">&#9654; video</span>'
+      : '';
     const badge   = inStock
       ? '<span class="given-badge yes">&#10007; Given here</span>'
       : '<span class="given-badge no">&#10003; Not given yet</span>';
@@ -5514,7 +5568,7 @@ function renderGiftGallery() {
       ? '<button class="btn btn-red gift-del-btn" style="padding:3px 8px;font-size:11px;" data-gift-id="' + g.id + '">Del</button>'
       : '';
     return '<div class="gift-card" data-gift-id="' + g.id + '">' +
-      '<div class="gift-img-wrap">' + img + '</div>' +
+      '<div class="gift-img-wrap">' + img + videoBadge + '</div>' +
       '<div class="gift-body">' +
         '<div class="gift-name">' + g.name + '</div>' +
         '<div class="gift-meta">&#127991; ' + catName + '</div>' +
@@ -5543,6 +5597,7 @@ async function deleteGift(id) {
     const { error } = await sb.from('gifts').delete().eq('id', id);
     if (error) { toast('Error: ' + error.message); return; }
     if (g.photo_url) deleteFromCloudinary(g.photo_url); // best-effort
+    if (g.video_url) deleteFromCloudinary(g.video_url); // best-effort
     gifts = gifts.filter(x => x.id !== id);
     giftStockSet.delete(id);
     renderGiftGallery();
@@ -5559,7 +5614,10 @@ function openGiftDetail(id) {
   const imgHtml = g.photo_url
     ? '<img src="' + g.photo_url + '" style="width:100%;border-radius:var(--r);margin-bottom:14px;max-height:260px;object-fit:cover;"/>'
     : '<div style="font-size:56px;text-align:center;padding:20px 0 14px;">&#127873;</div>';
-  $('giftDetailBody').innerHTML = imgHtml +
+  const videoBtnHtml = g.video_url
+    ? '<div style="margin:-8px 0 14px;"><a href="' + g.video_url + '" target="_blank" rel="noopener" class="btn btn-gray" style="text-decoration:none;display:inline-block;">&#9654; See how it works</a></div>'
+    : '';
+  $('giftDetailBody').innerHTML = imgHtml + videoBtnHtml +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">' +
       '<div><div class="fl" style="margin-bottom:2px;">Category</div><b>' + (g.gift_categories?.name||'-') + '</b></div>' +
       '<div><div class="fl" style="margin-bottom:2px;">MRP</div><span style="font-weight:700;color:var(--green);font-size:18px;">&#8377;' + (g.mrp||0).toLocaleString('en-IN') + '</span></div>' +
@@ -5582,7 +5640,7 @@ function openGiftDetail(id) {
 function openGiftModal(id) {
   $('giftId').value = id || '';
   $('giftModalTitle').textContent = id ? 'Edit gift' : 'Add gift';
-  hideErr('giftModalErr'); $('giftPhotoPreview').innerHTML = '';
+  hideErr('giftModalErr'); $('giftPhotoPreview').innerHTML = ''; $('giftVideoPreview').innerHTML = '';
   const giftPhotoInput = $('giftPhoto');
   if (giftPhotoInput) {
     giftPhotoInput.value = '';
@@ -5596,6 +5654,19 @@ function openGiftModal(id) {
       $('giftPhotoPreview').innerHTML = '<img src="' + url + '" style="height:80px;border-radius:6px;margin-top:4px;"/>';
     };
   }
+  const giftVideoInput = $('giftVideo');
+  if (giftVideoInput) {
+    giftVideoInput.value = '';
+    giftVideoInput.onchange = () => {
+      const file = giftVideoInput.files[0];
+      const existingUrl = id && gifts.find(x => x.id === id)?.video_url;
+      if (!file) {
+        $('giftVideoPreview').innerHTML = existingUrl ? '✓ Video already attached' : '';
+        return;
+      }
+      $('giftVideoPreview').innerHTML = '✓ ' + file.name + ' selected';
+    };
+  }
   $('giftCategory').innerHTML = '<option value="">Select category</option>' +
     categories.map(c => '<option value="' + c.id + '">' + c.name + '</option>').join('');
   $('giftVendor').innerHTML = '<option value="">Select vendor</option>' +
@@ -5605,6 +5676,7 @@ function openGiftModal(id) {
     $('giftName').value = g.name||''; $('giftMrp').value = g.mrp||'';
     $('giftDesc').value = g.description||''; $('giftCategory').value = g.category_id||''; $('giftVendor').value = g.vendor_id||'';
     if (g.photo_url) $('giftPhotoPreview').innerHTML = '<img src="'+g.photo_url+'" style="height:80px;border-radius:6px;margin-top:4px;"/>';
+    if (g.video_url) $('giftVideoPreview').innerHTML = '✓ Video already attached';
   } else {
     ['giftName','giftMrp','giftDesc'].forEach(x => $(x).value = '');
     $('giftCategory').value = ''; $('giftVendor').value = '';
@@ -5618,6 +5690,7 @@ async function saveGift() {
   const catId = $('giftCategory').value, vendorId = $('giftVendor').value;
   const mrp = parseInt($('giftMrp').value || 0), desc = $('giftDesc').value.trim();
   const photoFile = $('giftPhoto').files[0];
+  const videoFile = $('giftVideo').files[0];
   if (!name)           { showErr('giftModalErr','Gift name required'); return; }
   if (!catId)          { showErr('giftModalErr','Select a category');  return; }
   if (!vendorId)       { showErr('giftModalErr','Select a vendor');    return; }
@@ -5636,10 +5709,23 @@ async function saveGift() {
       return;
     }
   }
-  const obj = { name, category_id:catId, vendor_id:vendorId, mrp, description:desc||null, uploaded_by:me.id, ...(photo_url && { photo_url }) };
+  let video_url = id ? (gifts.find(x=>x.id===id)?.video_url||null) : null;
+  const oldGiftVideoUrl = video_url;
+  if (videoFile) {
+    try {
+      const cdRes = await uploadToCloudinary(videoFile, 'prabhu-pooja/gifts', CLOUDINARY_PRESET_GIFTS, 'video');
+      video_url = cdRes.secure_url;
+    } catch (e) {
+      showErr('giftModalErr', 'Video upload failed: ' + e.message);
+      btn.innerHTML = 'Save gift'; btn.disabled = false;
+      return;
+    }
+  }
+  const obj = { name, category_id:catId, vendor_id:vendorId, mrp, description:desc||null, uploaded_by:me.id, ...(photo_url && { photo_url }), ...(videoFile && { video_url }) };
   if (id) { const { error } = await sb.from('gifts').update(obj).eq('id', id); if (error) { showErr('giftModalErr',error.message); btn.innerHTML='Save gift'; btn.disabled=false; return; } }
   else    { const { data:nd, error } = await sb.from('gifts').insert(obj).select().single(); if (error) { showErr('giftModalErr',error.message); btn.innerHTML='Save gift'; btn.disabled=false; return; } }
   if (photoFile && oldGiftPhotoUrl && oldGiftPhotoUrl !== photo_url) deleteFromCloudinary(oldGiftPhotoUrl); // best-effort
+  if (videoFile && oldGiftVideoUrl && oldGiftVideoUrl !== video_url) deleteFromCloudinary(oldGiftVideoUrl); // best-effort
   await loadGiftData(); renderGiftGallery();
   btn.innerHTML='Save gift'; btn.disabled=false; closeModal('giftModal'); toast(id?'Gift updated':'Gift added!');
 }
@@ -6572,6 +6658,10 @@ async function fetchImageAsDataURL(url) {
     <div class="fg"><label class="fl">Gift photo</label>
       <input class="fi" type="file" id="giftPhoto" accept="image/*"/>
       <div id="giftPhotoPreview" style="margin-top:6px;"></div>
+    </div>
+    <div class="fg"><label class="fl">"How it works" video <span style="color:var(--gray);font-weight:400;">(optional)</span></label>
+      <input class="fi" type="file" id="giftVideo" accept="video/*"/>
+      <div id="giftVideoPreview" style="margin-top:6px;font-size:12px;color:var(--gray);"></div>
     </div>
     <div id="giftModalErr" class="alert alert-red"></div>
   </div>
