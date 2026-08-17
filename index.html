@@ -1165,7 +1165,7 @@ async function deleteFromCloudinary(url) {
 // delivery flag makes the browser preview the PDF inline instead.
 function cloudinaryInlineUrl(url) {
   if (!url) return url;
-  return url.replace('/upload/', '/upload/fl_attachment:false/');
+  return url.replace('/upload/', '/upload/fl_attachment:true/');
 }
 
 // Shows a PDF preview inside the app (iframe modal) instead of navigating
