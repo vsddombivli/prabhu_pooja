@@ -1098,7 +1098,7 @@ async function uploadToCloudinary(blob, folder, preset, resourceType = 'image', 
   // canvas compression) has no name and browsers default it to "blob",
   // which some Cloudinary presets (with "use filename as public ID") will
   // pick up instead of our explicit public_id below.
-  const ext = resourceType === 'video' ? 'mp4' : 'jpg';
+  const ext = resourceType === 'video' ? 'mp4' : (resourceType === 'raw' ? 'pdf' : 'jpg');
   const filename = (publicId ? publicId.split('/').pop() : 'upload') + '.' + ext;
   fd.append('file', blob, filename);
   fd.append('upload_preset', preset);
@@ -1131,10 +1131,13 @@ function cloudinaryPublicIdFromUrl(url) {
   } catch { return null; }
 }
 
-// Determines the Cloudinary resource_type ('image' or 'video') from a
-// secure_url so deletes hit the correct endpoint.
+// Determines the Cloudinary resource_type ('image', 'video', or 'raw') from
+// a secure_url so deletes hit the correct endpoint.
 function cloudinaryResourceTypeFromUrl(url) {
-  return url && url.includes('/video/upload/') ? 'video' : 'image';
+  if (!url) return 'image';
+  if (url.includes('/video/upload/')) return 'video';
+  if (url.includes('/raw/upload/'))   return 'raw';
+  return 'image';
 }
 
 // Best-effort delete on Cloudinary via the edge function. Never blocks the
@@ -4703,9 +4706,24 @@ async function generateCashMemoPDF(donorId) {
   const dateStr  = String(today.getDate()).padStart(2,'0') + '/' +
                    String(today.getMonth()+1).padStart(2,'0') + '/' +
                    today.getFullYear();
-  const receiptNo = 'VSD-' + String(today.getFullYear()).slice(-2) +
-                    String(today.getMonth()+1).padStart(2,'0') +
-                    donorId.slice(-4).toUpperCase();
+
+  // ── Sequential receipt number (org-wide, resets each fiscal year) ──
+  // Reuse the number already assigned to this donor if one exists, so
+  // re-downloading/re-sharing a receipt never burns a new number.
+  const fy = d.fiscal_year || currentFY();           // e.g. "2026-27"
+  const fyShort = fy.replace(/^\d{2}(\d{2})/, '$1');  // "2026-27" -> "26-27"
+  let receiptNo = d.receipt_no;
+  if (!receiptNo) {
+    const { data: seqNum, error: seqErr } = await sb.rpc('get_next_receipt_no', { p_fy: fy });
+    if (seqErr) { toast('Could not generate receipt number: ' + seqErr.message); return; }
+    receiptNo = `VSD/${fyShort}/${String(seqNum).padStart(5,'0')}`;
+    const { error: updErr } = await sb.from('donors').update({ receipt_no: receiptNo }).eq('id', donorId);
+    if (updErr) { toast('Could not save receipt number: ' + updErr.message); return; }
+    d.receipt_no = receiptNo;
+  }
+
+  const latestPay = payments.sort((a,b) => (b.paid_date||'').localeCompare(a.paid_date||''))[0];
+  const receivedByUser = latestPay ? allUsers.find(u => u.id === latestPay.received_by) : null;
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a5' });
@@ -4756,8 +4774,6 @@ async function generateCashMemoPDF(donorId) {
   // Left: From
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(100);
   doc.text('Location', ml, y);
-  //doc.setFont('helvetica', 'normal'); doc.setTextColor(20);
-  //doc.text('Vardhman Sanskar Dham, Dombivli', ml, y+5);
   doc.setFont('helvetica', 'normal'); doc.setTextColor(20);
   doc.text((myLocation?.name || 'SMPT') + ' - ' + (myLocation?.city || 'Dombivli'), ml, y+5);
 
@@ -4831,14 +4847,18 @@ async function generateCashMemoPDF(donorId) {
   doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(80);
   doc.text('Amount (in words) : ' + numberToWords(totalPaid) + ' Rupees Only', ml, y);
 
-  // ── Payment mode ─────────────────────────────────
+  // ── Payment mode + Received by ───────────────────
   y += 6;
-  const latestPay = payments.sort((a,b) => (b.paid_date||'').localeCompare(a.paid_date||''))[0];
   if (latestPay) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80);
     let modeText = 'Payment mode : ' + (latestPay.payment_mode||'').toUpperCase();
     if (latestPay.txn_ref) modeText += '  |  Ref : ' + latestPay.txn_ref;
     doc.text(modeText, ml, y);
+  }
+  if (receivedByUser) {
+    y += 5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80);
+    doc.text('Received by : ' + receivedByUser.full_name, ml, y);
   }
 
   // ── Footer ───────────────────────────────────────
@@ -4861,66 +4881,59 @@ async function generateCashMemoPDF(donorId) {
   // Save PDF to device
   const pdfBlob = doc.output('blob');
   const pdfUrl  = URL.createObjectURL(pdfBlob);
-  const fileName = `Receipt_${receiptNo}.pdf`;
+  const receiptNoSafe = receiptNo.replace(/\//g, '-'); // for filenames/public_id — Cloudinary public_id can't use raw slashes meaningfully here
+  const fileName = `Receipt_${receiptNoSafe}.pdf`;
 
-  // Auto-download
+  // Auto-download a local copy
   const a = document.createElement('a');
   a.href = pdfUrl; a.download = fileName;
   document.body.appendChild(a); a.click();
   document.body.removeChild(a);
 
+  // ── Upload PDF to Cloudinary so we have a shareable link ──
+  const donorFolderName = (d.full_name || 'unknown')
+    .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
+  let receiptLinkUrl = null;
+  let uploadFailed = false;
+  try {
+    const cdRes = await uploadToCloudinary(pdfBlob, `prabhu-pooja/receipts/${donorFolderName}`, CLOUDINARY_PRESET_DONORS, 'raw', `${fyShort}_${receiptNoSafe}`);
+    receiptLinkUrl = cdRes.secure_url;
+  } catch (e) {
+    uploadFailed = true;
+    console.warn('Receipt PDF upload failed:', e);
+  }
+
   // Show share panel
-  const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${receiptNo}\nDate: ${dateStr}\n\nThank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
+  const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${receiptNo}\nDate: ${dateStr}\n\n${receiptLinkUrl ? 'Download your receipt here: ' + receiptLinkUrl + '\n\n' : ''}Thank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
   const waUrl = `https://wa.me/91${d.mobile.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
 
   const panel = document.createElement('div');
   panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-end;';
   panel.innerHTML = `
     <div style="background:#fff;width:100%;border-radius:16px 16px 0 0;padding:20px;font-family:system-ui,sans-serif;">
-      <div style="font-size:15px;font-weight:700;margin-bottom:4px;">✅ Receipt downloaded!</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px;">✅ Receipt ${receiptNo} downloaded!</div>
       <div style="font-size:12px;color:#666;margin-bottom:16px;">
-        <strong>${fileName}</strong> saved to your downloads.<br>
-        To send PDF on WhatsApp: open WhatsApp → attach file from Downloads.
+        <strong>${fileName}</strong> saved to your downloads.
+        ${uploadFailed ? '<br><span style="color:#c0392b;">⚠️ Could not upload a shareable link — WhatsApp message will be text-only.</span>' : ''}
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;">
         <a href="${waUrl}" target="_blank"
           style="background:#25D366;color:#fff;border-radius:10px;padding:13px 16px;text-decoration:none;font-size:14px;font-weight:600;display:flex;align-items:center;gap:10px;">
           <span style="font-size:20px;">💬</span>
           <div>
-            <div>Send WhatsApp text to ${d.full_name}</div>
-            <div style="font-size:11px;opacity:.85;">Opens WhatsApp with receipt summary (text only)</div>
+            <div>Share Receipt via WhatsApp</div>
+            <div style="font-size:11px;opacity:.85;">${receiptLinkUrl ? 'Sends thank-you message with download link' : 'Sends thank-you message (no link)'}</div>
           </div>
         </a>
-        <button onclick="navigator.share ? navigator.share({title:'Receipt ${receiptNo}',files:[new File([${JSON.stringify(await blobToBase64Note())}],'${fileName}',{type:'application/pdf'})]}).catch(()=>{}) : alert('Use the downloaded file from your Downloads folder')"
-          style="background:#2a78d6;color:#fff;border:none;border-radius:10px;padding:13px 16px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px;">
-          <span style="font-size:20px;">📤</span>
-          <div style="text-align:left;">
-            <div>Share PDF file</div>
-            <div style="font-size:11px;opacity:.85;">Share via WhatsApp, Drive, Email etc.</div>
-          </div>
-        </button>
+        ${receiptLinkUrl ? `<a href="${receiptLinkUrl}" target="_blank"
+          style="background:#f0f0f0;color:#222;border-radius:10px;padding:12px 16px;text-decoration:none;font-size:13px;font-weight:600;text-align:center;">
+          🔗 Open receipt link
+        </a>` : ''}
         <button onclick="this.closest('div').parentElement.remove()"
           style="background:#f0f0f0;border:none;border-radius:10px;padding:12px;font-size:14px;cursor:pointer;">Close</button>
       </div>
     </div>`;
   panel.addEventListener('click', e => { if(e.target===panel) panel.remove(); });
-
-  // Use Web Share API for direct file sharing (works on Android Chrome)
-  const shareBtn = panel.querySelector('button');
-  shareBtn.onclick = async () => {
-    if (navigator.share && navigator.canShare) {
-      try {
-        const file = new File([pdfBlob], fileName, { type:'application/pdf' });
-        if (navigator.canShare({ files:[file] })) {
-          await navigator.share({ title: 'Receipt ' + receiptNo, files: [file] });
-          panel.remove(); return;
-        }
-      } catch(e) { /* fall through */ }
-    }
-    // Fallback: open PDF in new tab
-    window.open(pdfUrl, '_blank');
-  };
-
   document.body.appendChild(panel);
 }
 
