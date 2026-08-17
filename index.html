@@ -1161,6 +1161,32 @@ async function deleteFromCloudinary(url) {
   } catch (e) { console.warn('Cloudinary delete failed (non-blocking):', e); }
 }
 
+// Raw (PDF/ZIP) files download by default on Cloudinary. Inserting this
+// delivery flag makes the browser preview the PDF inline instead.
+function cloudinaryInlineUrl(url) {
+  if (!url) return url;
+  return url.replace('/upload/', '/upload/fl_attachment:false/');
+}
+
+// Shows a PDF preview inside the app (iframe modal) instead of navigating
+// away or triggering a download.
+function previewPdfInApp(url, title) {
+  const inlineUrl = cloudinaryInlineUrl(url);
+  const panel = document.createElement('div');
+  panel.className = 'pdf-preview-panel';
+  panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;flex-direction:column;';
+  panel.innerHTML = `
+    <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;font-family:system-ui,sans-serif;">
+      <div style="font-weight:700;font-size:14px;">${title || 'Receipt preview'}</div>
+      <div style="display:flex;gap:8px;">
+        <a href="${inlineUrl}" target="_blank" style="font-size:13px;color:#2a78d6;text-decoration:none;padding:6px 10px;">Open in new tab</a>
+        <button onclick="this.closest('.pdf-preview-panel').remove()" style="background:#f0f0f0;border:none;border-radius:8px;padding:6px 12px;font-size:14px;cursor:pointer;">✕</button>
+      </div>
+    </div>
+    <iframe src="${inlineUrl}" style="flex:1;border:0;width:100%;background:#525659;"></iframe>`;
+  document.body.appendChild(panel);
+}
+
 // ═══════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════
@@ -4582,7 +4608,8 @@ function renderDonorList() {
         <button class="btn btn-gray" style="padding:4px 10px;font-size:12px;" onclick="openDonorModal('${d.id}')">Edit</button>
         <button class="btn btn-red"  style="padding:4px 10px;font-size:12px;" onclick="deleteDonor('${d.id}')">Del</button>` : ''}
         ${calcStatus === 'paid' ? `
-        <button class="btn btn-blue" style="padding:4px 10px;font-size:12px;background:var(--bl);color:var(--blue);border:1px solid var(--blue);" onclick="sendDonorReceipt('${d.id}')">🧾 Receipt</button>` : ''}
+        <button class="btn btn-blue" style="padding:4px 10px;font-size:12px;background:var(--bl);color:var(--blue);border:1px solid var(--blue);" onclick="sendDonorReceipt('${d.id}')">🧾 Receipt</button>
+        <button class="btn btn-green" style="padding:4px 10px;font-size:12px;" onclick="quickShareWhatsApp('${d.id}')">📲 Share WhatsApp</button>` : ''}
       </div>
 
       <div style="display:flex;gap:16px;margin-bottom:8px;">
@@ -4682,6 +4709,27 @@ function sendDonorReceipt(donorId) {
     // No PAN — generate simple cash memo PDF
     generateCashMemoPDF(donorId);
   }
+}
+
+// Quick one-tap WhatsApp share for donors whose payment is fully complete.
+// Reuses the already-generated receipt (number + Cloudinary link) if one
+// exists, so it doesn't regenerate/re-upload the PDF every time. Only
+// falls back to full generation if no receipt has been created yet.
+async function quickShareWhatsApp(donorId) {
+  const d = donors.find(x => x.id === donorId);
+  if (!d) return;
+  if (!d.receipt_no || !d.receipt_pdf_url) {
+    toast('Generating receipt first…');
+    await generateCashMemoPDF(donorId); // this also shows its own share panel
+    return;
+  }
+  const payments = donorPayments[donorId] || [];
+  const totalPaid = payments.reduce((s,p) => s+(p.amount||0), 0);
+  const dateStr = fmtDate(localDateStr());
+  const inlineLink = cloudinaryInlineUrl(d.receipt_pdf_url);
+  const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${d.receipt_no}\n\nView/download your receipt here: ${inlineLink}\n\nThank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
+  const waUrl = `https://wa.me/91${(d.mobile||'').replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
+  window.open(waUrl, '_blank');
 }
 function numberToWords(n) {
   if (n === 0) return 'Zero';
@@ -4893,18 +4941,21 @@ async function generateCashMemoPDF(donorId) {
   // ── Upload PDF to Cloudinary so we have a shareable link ──
   const donorFolderName = (d.full_name || 'unknown')
     .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
-  let receiptLinkUrl = null;
+  let receiptLinkUrl = d.receipt_pdf_url || null;
   let uploadFailed = false;
   try {
-    const cdRes = await uploadToCloudinary(pdfBlob, `prabhu-pooja/receipts/${donorFolderName}`, CLOUDINARY_PRESET_DONORS, 'raw', `${fyShort}_${receiptNoSafe}`);
+    const cdRes = await uploadToCloudinary(pdfBlob, `prabhu-pooja/receipts/${donorFolderName}`, CLOUDINARY_PRESET_DONORS, 'raw', receiptNoSafe);
     receiptLinkUrl = cdRes.secure_url;
+    await sb.from('donors').update({ receipt_pdf_url: receiptLinkUrl }).eq('id', donorId);
+    d.receipt_pdf_url = receiptLinkUrl;
   } catch (e) {
-    uploadFailed = true;
+    uploadFailed = !receiptLinkUrl; // only flag as failed if we have no usable link at all
     console.warn('Receipt PDF upload failed:', e);
   }
 
   // Show share panel
-  const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${receiptNo}\nDate: ${dateStr}\n\n${receiptLinkUrl ? 'Download your receipt here: ' + receiptLinkUrl + '\n\n' : ''}Thank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
+  const inlineLink = cloudinaryInlineUrl(receiptLinkUrl);
+  const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${receiptNo}\nDate: ${dateStr}\n\n${inlineLink ? 'View/download your receipt here: ' + inlineLink + '\n\n' : ''}Thank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
   const waUrl = `https://wa.me/91${d.mobile.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
 
   const panel = document.createElement('div');
@@ -4922,13 +4973,13 @@ async function generateCashMemoPDF(donorId) {
           <span style="font-size:20px;">💬</span>
           <div>
             <div>Share Receipt via WhatsApp</div>
-            <div style="font-size:11px;opacity:.85;">${receiptLinkUrl ? 'Sends thank-you message with download link' : 'Sends thank-you message (no link)'}</div>
+            <div style="font-size:11px;opacity:.85;">${inlineLink ? 'Sends thank-you message with view/download link' : 'Sends thank-you message (no link)'}</div>
           </div>
         </a>
-        ${receiptLinkUrl ? `<a href="${receiptLinkUrl}" target="_blank"
-          style="background:#f0f0f0;color:#222;border-radius:10px;padding:12px 16px;text-decoration:none;font-size:13px;font-weight:600;text-align:center;">
-          🔗 Open receipt link
-        </a>` : ''}
+        ${inlineLink ? `<button onclick="previewPdfInApp('${receiptLinkUrl}','Receipt ${receiptNo}')"
+          style="background:#f0f0f0;color:#222;border:none;border-radius:10px;padding:12px 16px;font-size:13px;font-weight:600;cursor:pointer;">
+          👁️ Preview receipt
+        </button>` : ''}
         <button onclick="this.closest('div').parentElement.remove()"
           style="background:#f0f0f0;border:none;border-radius:10px;padding:12px;font-size:14px;cursor:pointer;">Close</button>
       </div>
