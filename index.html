@@ -1161,11 +1161,14 @@ async function deleteFromCloudinary(url) {
   } catch (e) { console.warn('Cloudinary delete failed (non-blocking):', e); }
 }
 
-// Raw (PDF/ZIP) files download by default on Cloudinary. Inserting this
-// delivery flag makes the browser preview the PDF inline instead.
+// Raw (PDF/ZIP) files download by default on Cloudinary unless your account
+// has "Allow delivery of PDF and ZIP files" enabled (Settings → Security).
+// NOTE: do NOT use fl_attachment:false here — Cloudinary treats the text
+// after the colon as a literal download filename, not a boolean, which is
+// why links were downloading as "false.pdf". With PDF/ZIP delivery allowed
+// at the account level, the plain secure_url already previews inline.
 function cloudinaryInlineUrl(url) {
-  if (!url) return url;
-  return url.replace('/upload/', '/upload/fl_attachment:true/');
+  return url;
 }
 
 // Shows a PDF preview inside the app (iframe modal) instead of navigating
@@ -4706,30 +4709,9 @@ function sendDonorReceipt(donorId) {
     // PAN available — route to Online Receipt Generator
     openOnlineReceiptFlow(donorId);
   } else {
-    // No PAN — generate simple cash memo PDF
+    // No PAN — generate simple cash memo PDF (preview only, see below)
     generateCashMemoPDF(donorId);
   }
-}
-
-// Quick one-tap WhatsApp share for donors whose payment is fully complete.
-// Reuses the already-generated receipt (number + Cloudinary link) if one
-// exists, so it doesn't regenerate/re-upload the PDF every time. Only
-// falls back to full generation if no receipt has been created yet.
-async function quickShareWhatsApp(donorId) {
-  const d = donors.find(x => x.id === donorId);
-  if (!d) return;
-  if (!d.receipt_no || !d.receipt_pdf_url) {
-    toast('Generating receipt first…');
-    await generateCashMemoPDF(donorId); // this also shows its own share panel
-    return;
-  }
-  const payments = donorPayments[donorId] || [];
-  const totalPaid = payments.reduce((s,p) => s+(p.amount||0), 0);
-  const dateStr = fmtDate(localDateStr());
-  const inlineLink = cloudinaryInlineUrl(d.receipt_pdf_url);
-  const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${d.receipt_no}\n\nView/download your receipt here: ${inlineLink}\n\nThank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
-  const waUrl = `https://wa.me/91${(d.mobile||'').replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
-  window.open(waUrl, '_blank');
 }
 function numberToWords(n) {
   if (n === 0) return 'Zero';
@@ -4926,66 +4908,52 @@ async function generateCashMemoPDF(donorId) {
   doc.setTextColor(230, 235, 250);
   doc.text('VSD', pw/2, ph/2 + 10, { align:'center', angle:30 });
 
-  // Save PDF to device
+  // Build the raw PDF blob (not yet downloaded/uploaded — callers decide
+  // what to do with it: preview in-app, or upload + share via WhatsApp).
   const pdfBlob = doc.output('blob');
-  const pdfUrl  = URL.createObjectURL(pdfBlob);
   const receiptNoSafe = receiptNo.replace(/\//g, '-'); // for filenames/public_id — Cloudinary public_id can't use raw slashes meaningfully here
   const fileName = `Receipt_${receiptNoSafe}.pdf`;
 
-  // Auto-download a local copy
-  const a = document.createElement('a');
-  a.href = pdfUrl; a.download = fileName;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a);
-
-  // ── Upload PDF to Cloudinary so we have a shareable link ──
+  // ── Upload PDF to Cloudinary so we have a shareable/previewable link ──
   const donorFolderName = (d.full_name || 'unknown')
     .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
   let receiptLinkUrl = d.receipt_pdf_url || null;
-  let uploadFailed = false;
   try {
     const cdRes = await uploadToCloudinary(pdfBlob, `prabhu-pooja/receipts/${donorFolderName}`, CLOUDINARY_PRESET_DONORS, 'raw', receiptNoSafe);
     receiptLinkUrl = cdRes.secure_url;
     await sb.from('donors').update({ receipt_pdf_url: receiptLinkUrl }).eq('id', donorId);
     d.receipt_pdf_url = receiptLinkUrl;
   } catch (e) {
-    uploadFailed = !receiptLinkUrl; // only flag as failed if we have no usable link at all
     console.warn('Receipt PDF upload failed:', e);
   }
 
-  // Show share panel
-  const inlineLink = cloudinaryInlineUrl(receiptLinkUrl);
-  const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${receiptNo}\nDate: ${dateStr}\n\n${inlineLink ? 'View/download your receipt here: ' + inlineLink + '\n\n' : ''}Thank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
-  const waUrl = `https://wa.me/91${d.mobile.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
+  if (receiptLinkUrl) {
+    previewPdfInApp(receiptLinkUrl, 'Receipt ' + receiptNo);
+  } else {
+    // Upload failed — fall back to a local blob preview + manual download.
+    toast('Could not upload receipt online — showing local copy');
+    const pdfUrl = URL.createObjectURL(pdfBlob);
+    previewPdfInApp(pdfUrl, 'Receipt ' + receiptNo);
+  }
+}
 
-  const panel = document.createElement('div');
-  panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-end;';
-  panel.innerHTML = `
-    <div style="background:#fff;width:100%;border-radius:16px 16px 0 0;padding:20px;font-family:system-ui,sans-serif;">
-      <div style="font-size:15px;font-weight:700;margin-bottom:4px;">✅ Receipt ${receiptNo} downloaded!</div>
-      <div style="font-size:12px;color:#666;margin-bottom:16px;">
-        <strong>${fileName}</strong> saved to your downloads.
-        ${uploadFailed ? '<br><span style="color:#c0392b;">⚠️ Could not upload a shareable link — WhatsApp message will be text-only.</span>' : ''}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <a href="${waUrl}" target="_blank"
-          style="background:#25D366;color:#fff;border-radius:10px;padding:13px 16px;text-decoration:none;font-size:14px;font-weight:600;display:flex;align-items:center;gap:10px;">
-          <span style="font-size:20px;">💬</span>
-          <div>
-            <div>Share Receipt via WhatsApp</div>
-            <div style="font-size:11px;opacity:.85;">${inlineLink ? 'Sends thank-you message with view/download link' : 'Sends thank-you message (no link)'}</div>
-          </div>
-        </a>
-        ${inlineLink ? `<button onclick="previewPdfInApp('${receiptLinkUrl}','Receipt ${receiptNo}')"
-          style="background:#f0f0f0;color:#222;border:none;border-radius:10px;padding:12px 16px;font-size:13px;font-weight:600;cursor:pointer;">
-          👁️ Preview receipt
-        </button>` : ''}
-        <button onclick="this.closest('div').parentElement.remove()"
-          style="background:#f0f0f0;border:none;border-radius:10px;padding:12px;font-size:14px;cursor:pointer;">Close</button>
-      </div>
-    </div>`;
-  panel.addEventListener('click', e => { if(e.target===panel) panel.remove(); });
-  document.body.appendChild(panel);
+// Quick one-tap WhatsApp share for donors whose payment is fully complete.
+// Reuses the already-generated receipt (number + Cloudinary link) if one
+// exists; otherwise generates it first (silently, no preview shown), then
+// opens WhatsApp with the thank-you message + link.
+async function quickShareWhatsApp(donorId) {
+  const d = donors.find(x => x.id === donorId);
+  if (!d) return;
+  if (!d.receipt_no || !d.receipt_pdf_url) {
+    toast('Generating receipt…');
+    await generateCashMemoPDF(donorId); // builds + uploads + shows preview; also sets d.receipt_no / d.receipt_pdf_url
+    if (!d.receipt_no || !d.receipt_pdf_url) return; // generation/upload failed — bail, message already shown
+  }
+  const payments = donorPayments[donorId] || [];
+  const totalPaid = payments.reduce((s,p) => s+(p.amount||0), 0);
+  const waMsg = `🙏 *Receipt — Prabhu Pooja Donation*\n\nDear ${d.full_name},\n\nWe acknowledge receipt of *Rs.${totalPaid.toLocaleString('en-IN')}* towards Bal Sanskar Prabhu Pooja.\n\nReceipt No: ${d.receipt_no}\n\nView/download your receipt here: ${d.receipt_pdf_url}\n\nThank you for your generous contribution 🙏\n— Vardhman Sanskar Dham, Dombivli`;
+  const waUrl = `https://wa.me/91${(d.mobile||'').replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
+  window.open(waUrl, '_blank');
 }
 
 function openOnlineReceiptFlow(donorId) {
