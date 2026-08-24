@@ -3945,6 +3945,25 @@ async function switchFY(fy, btn) {
   renderDonorList();
 }
 
+function getActiveFYEventDays(fy) {
+  // Returns array of active (not disabled) event day date strings for a given FY
+  fy = fy || activeStockFY || currentFY();
+  const [sy]       = fy.split('-');
+  const startMonth = (myLocation?.fy_start_month ?? 4) - 1;
+  const eventDay   = myLocation?.event_day ?? 0;
+  const fyStart    = new Date(parseInt(sy), startMonth, 1);
+  const fyEnd      = new Date(parseInt(sy) + 1, startMonth, 0);
+  const days = [];
+  const cur  = new Date(fyStart);
+  while (cur <= fyEnd) {
+    if (cur.getDay() === eventDay) {
+      const ds = localDateStr(cur);
+      if (!disabledEventDays.has(ds)) days.push(ds);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
+}
 // ═══════════════════════════════════════════════════
 // LOAD PHASE 2 DATA
 // ═══════════════════════════════════════════════════
@@ -6044,12 +6063,10 @@ function _renderStockFinance() {
   // Flower cost = one purchase per unique Sunday that has any donor scheduled.
   // Multiple donors on the same Sunday share one set of flowers, so we
   // collect all assigned sunday_dates across all donors and deduplicate.
-  const allAssignedSundays = new Set();
-  donors.forEach(d => {
-    (donorSundays[d.id] || []).forEach(s => allAssignedSundays.add(s.sunday_date));
-  });
-  const flowerCost = allAssignedSundays.size * flowerPerSunday;
-  const uniqueSundayCount = allAssignedSundays.size;
+    // Flowers bought every active Sunday in this FY — not just donor-assigned ones
+  const activeFYDays     = getActiveFYEventDays(activeStockFY);
+  const flowerCost       = activeFYDays.length * flowerPerSunday;
+  const uniqueSundayCount = activeFYDays.length;
   const totalExpense = stockCost + miscCost + flowerCost;
   const donorIncome  = donors.reduce((s,d) =>
     s + (donorPayments[d.id]||[]).reduce((ps,p) => ps+(p.amount||0), 0), 0);
@@ -6279,6 +6296,7 @@ async function deleteMiscExp(id) {
 // ═══════════════════════════════════════════════════
 // REPORTS
 // ═══════════════════════════════════════════════════
+
 function renderReports() {
   // Populate FY dropdowns
   const fys = fyOptions();
@@ -6384,19 +6402,27 @@ async function exportDonorReport() {
       'Balance'       : (d.amount || 0) - paid,
       'Status'        : d.paid_status || (paid >= d.amount ? 'paid' : paid > 0 ? 'partial' : 'pending'),
     };
-    if (payments.length === 0) {
-      rows.push({ ...base, 'Payment date':'', 'Payment mode':'', 'Transaction ref':'', 'Payment amount':'' });
-    } else {
-      payments.forEach(p => {
-        rows.push({
-          ...base,
-          'Payment date'    : fmtDate(p.paid_date),
-          'Payment mode'    : p.payment_mode,
-          'Transaction ref' : p.txn_ref || '',
-          'Payment amount'  : p.amount,
+      if (payments.length === 0) {
+        rows.push({ ...base, 'Payment date':'', 'Payment mode':'', 'Transaction ref':'', 'Receipt No':'', 'Received By':'', 'Payment amount':'' });
+      } else {
+        payments.sort((a,b) => (a.paid_date||'').localeCompare(b.paid_date||'')).forEach((p, idx) => {
+          // Build receipt no same way as generateCashMemoPDF
+          const pd       = p.paid_date ? new Date(p.paid_date + 'T12:00:00') : new Date();
+          const fyShort  = (d.fiscal_year||'').replace('-','');
+          const nameCode = d.full_name.replace(/\s+/g,'').slice(0,4).toUpperCase();
+          const receiptNo = `VSD-${nameCode}-${fyShort}-${idx+1}`;
+          const recvUser  = allUsers.find(u => u.id === p.received_by);
+          rows.push({
+            ...base,
+            'Payment date'    : fmtDate(p.paid_date),
+            'Payment mode'    : p.payment_mode || '',
+            'Transaction ref' : p.txn_ref      || '',
+            'Receipt No'      : receiptNo,
+            'Received By'     : recvUser?.full_name || '',
+            'Payment amount'  : p.amount,
+          });
         });
-      });
-    }
+      }
   });
 
   xlDown(rows, `Donors_${fy}`);
@@ -6463,7 +6489,9 @@ async function exportFinReport() {
   const donorIncome= (donorData || []).reduce((s, d) => s + (d.donor_payments || []).reduce((ps, p) => ps + (p.amount || 0), 0), 0);
   const allAssigned= new Set();
   (donorData || []).forEach(() => {}); // flower cost needs donorSundays — use simple calc
-  const flowerCost = allAssignedSundays?.size ? allAssignedSundays.size * (myLocation?.flower_cost || 300) : 0;
+  // Flower cost = all active event days in this FY × flower_cost per day
+  // (flowers are bought every active Sunday regardless of whether a donor is assigned)
+  const flowerCost = getActiveFYEventDays(fy).length * (myLocation?.flower_cost || 300);
   const totalExp   = stockCost + miscCost + flowerCost;
   const summaryRows = [
     { 'Category':'INCOME', 'Description':'Donor payments received', 'Amount':donorIncome },
