@@ -6403,15 +6403,16 @@ async function exportDonorReport() {
       'Status'        : d.paid_status || (paid >= d.amount ? 'paid' : paid > 0 ? 'partial' : 'pending'),
     };
       if (payments.length === 0) {
-        rows.push({ ...base, 'Payment date':'', 'Payment mode':'', 'Transaction ref':'', 'Receipt No':'', 'Received By':'', 'Payment amount':'' });
+        rows.push({ ...base, 'Payment date':'', 'Payment mode':'', 'Transaction ref':'', 'Receipt No':'', 'Received By':'', 'Payment amount':'', 'Receipt Url':'' });
       } else {
         payments.sort((a,b) => (a.paid_date||'').localeCompare(b.paid_date||'')).forEach((p, idx) => {
           // Build receipt no same way as generateCashMemoPDF
           const pd       = p.paid_date ? new Date(p.paid_date + 'T12:00:00') : new Date();
           const fyShort  = (d.fiscal_year||'').replace('-','');
           const nameCode = d.full_name.replace(/\s+/g,'').slice(0,4).toUpperCase();
-          const receiptNo = `VSD-${nameCode}-${fyShort}-${idx+1}`;
+          const receiptNo = d.receipt_no;
           const recvUser  = allUsers.find(u => u.id === p.received_by);
+          const receiptUrl = (d.receipt_prd_url || '');
           rows.push({
             ...base,
             'Payment date'    : fmtDate(p.paid_date),
@@ -6420,6 +6421,7 @@ async function exportDonorReport() {
             'Receipt No'      : receiptNo,
             'Received By'     : recvUser?.full_name || '',
             'Payment amount'  : p.amount,
+            'Receipt Url'     : receiptUrl,
           });
         });
       }
