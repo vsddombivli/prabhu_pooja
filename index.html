@@ -6412,7 +6412,7 @@ async function exportDonorReport() {
           const nameCode = d.full_name.replace(/\s+/g,'').slice(0,4).toUpperCase();
           const receiptNo = d.receipt_no;
           const recvUser  = allUsers.find(u => u.id === p.received_by);
-          const receiptUrl = (d.receipt_prd_url || '');
+          const receiptUrl = (d.receipt_pdf_url || '');
           rows.push({
             ...base,
             'Payment date'    : fmtDate(p.paid_date),
