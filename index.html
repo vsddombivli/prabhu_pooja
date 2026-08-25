@@ -5563,6 +5563,8 @@ async function loadGiftData() {
 }
 
 function renderGiftGallery() {
+  // Load stock entries if not yet loaded (needed for last-given dates)
+  if (!stockEntries.length && sb && myLocation) await loadStockData();
   const canManageGifts = role === 'admin' || role === 'superadmin';
   if ($('addGiftBtn')) $('addGiftBtn').style.display = canManageGifts ? '' : 'none';
   // Category filter dropdown
@@ -5618,9 +5620,15 @@ function renderGiftGallery() {
     const videoBadge = g.video_url
       ? '<span style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:2px 6px;border-radius:10px;">&#9654; video</span>'
       : '';
-    const badge   = inStock
-      ? '<span class="given-badge yes">&#10007; Given here</span>'
-      : '<span class="given-badge no">&#10003; Not given yet</span>';
+        // Find latest given_date for this gift at this location from stockEntries
+    const givenDates = stockEntries
+      .filter(e => e.gift_id === g.id && e.given_date)
+      .map(e => e.given_date)
+      .sort().reverse();
+    const lastGiven  = givenDates[0] || null;
+    const badge = inStock
+      ? `<span class="given-badge yes">✗ Given here${lastGiven ? ' · ' + fmtDate(lastGiven) : ''}</span>`
+      : '<span class="given-badge no">✓ Not given yet</span>';
     const editBtn = (role==='admin'||role==='superadmin')
       ? '<button class="btn btn-gray gift-edit-btn" style="padding:3px 8px;font-size:11px;" data-gift-id="' + g.id + '">Edit</button>'
       : '';
@@ -6188,10 +6196,11 @@ function openStockEntryModal(id) {
     $('seTransport').value  = e.transport_cost||'';
     $('seVendor').value     = e.vendor_id||'';
     $('seNotes').value      = e.notes||'';
+    $('seGivenDate').value  = e.given_date || '';
     $('sePurchaseDate').value = e.purchase_date||TODAY;
     calcStockCost();
   } else {
-    ['seQtyBought','seBuyPrice','seTransport','seNotes'].forEach(x=>$(x).value='');
+    ['seQtyBought','seBuyPrice','seTransport','seNotes','seGivenDate'].forEach(x=>$(x).value='');
     $('seQtyLeft').value = '';
     $('seGift').value=''; $('seVendor').value='';
   }
@@ -6219,6 +6228,7 @@ async function saveStockEntry() {
   const qtyBought=parseInt($('seQtyBought').value||0), qtyLeft=parseInt($('seQtyLeft').value||0);
   const buyPrice=parseInt($('seBuyPrice').value||0), transport=parseInt($('seTransport').value||0);
   const vendorId=$('seVendor').value, notes=$('seNotes').value.trim(), purchDate=$('sePurchaseDate').value;
+  const givenDate=$('seGivenDate').value;
   if(!giftId)                    {showErr('seErr','Select a gift');return;}
   if(!qtyBought||qtyBought<1)    {showErr('seErr','Qty bought must be ≥ 1');return;}
   if(qtyLeft<0)                  {showErr('seErr','Qty left cannot be negative');return;}
@@ -6226,7 +6236,7 @@ async function saveStockEntry() {
   if(!buyPrice||buyPrice<0)      {showErr('seErr','Enter buy price per unit');return;}
   if(!purchDate)                 {showErr('seErr','Enter purchase date');return;}
   const btn=$('seSaveBtn'); btn.innerHTML='<span class="spin"></span>'; btn.disabled=true;
-  const obj={gift_id:giftId,location_id:myLocation.id,fiscal_year:activeStockFY,qty_bought:qtyBought,qty_left:qtyLeft,buy_price_per_unit:buyPrice,transport_cost:transport||0,vendor_id:vendorId||null,notes:notes||null,purchase_date:purchDate,recorded_by:me.id};
+  const obj={gift_id:giftId,location_id:myLocation.id,fiscal_year:activeStockFY,qty_bought:qtyBought,qty_left:qtyLeft,buy_price_per_unit:buyPrice,transport_cost:transport||0,vendor_id:vendorId||null,notes:notes||null,purchase_date:purchDate,recorded_by:me.id,given_date:givenDate||null};
   let error;
   if(id){({error}=await sb.from('gift_stock_entries').update(obj).eq('id',id));}
   else  {({error}=await sb.from('gift_stock_entries').insert(obj));}
@@ -6547,10 +6557,13 @@ async function exportGiftExcel() {
   // Aggregate stock per gift
   const stockMap = {};
   (stockData || []).forEach(e => {
-    if (!stockMap[e.gift_id]) stockMap[e.gift_id] = { qty_bought:0, qty_left:0, total_cost:0 };
+    if (!stockMap[e.gift_id]) stockMap[e.gift_id] = { qty_bought:0, qty_left:0, total_cost:0, lastGiven:null };
     stockMap[e.gift_id].qty_bought += (e.qty_bought||0);
     stockMap[e.gift_id].qty_left   += (e.qty_left||0);
     stockMap[e.gift_id].total_cost += (e.qty_bought*(e.buy_price_per_unit||0)) + (e.transport_cost||0);
+    if (e.given_date && (!stockMap[e.gift_id].lastGiven || e.given_date > stockMap[e.gift_id].lastGiven)) {
+      stockMap[e.gift_id].lastGiven = e.given_date;
+    }
   });
 
   const rows = [...gifts]
@@ -6568,6 +6581,7 @@ async function exportGiftExcel() {
         'Qty Left'         : st.qty_left   || 0,
         'Total Cost (Rs.)' : st.total_cost || 0,
         'Stock Status'     : st.qty_left > 0 ? 'Available' : (st.qty_bought > 0 ? 'Exhausted' : 'Not purchased'),
+        'Last Given Date'  : st.lastGiven ? fmtDate(st.lastGiven) : '',
         'Uploaded By'      : g.profiles?.full_name || '',
       };
     });
@@ -6837,6 +6851,10 @@ async function fetchImageAsDataURL(url) {
     </div>
     <div class="fg"><label class="fl">Vendor (optional)</label>
       <select class="fi" id="seVendor"><option value="">— None / walk-in —</option></select>
+    </div>
+    <div class="fg"><label class="fl">Date given to kids (optional)</label>
+      <input class="fi" type="date" id="seGivenDate" placeholder="Leave blank if not yet given"/>
+      <div style="font-size:11px;color:var(--gray);margin-top:3px;">Set this when the gift is actually distributed to kids on Sunday</div>
     </div>
     <div class="fg"><label class="fl">Notes</label><input class="fi" id="seNotes" placeholder="e.g. Diwali stock, negotiated rate"/></div>
     <div id="seCostPreview" style="background:var(--gl);border-radius:var(--r);padding:10px 14px;font-size:13px;margin-bottom:4px;display:none;"></div>
