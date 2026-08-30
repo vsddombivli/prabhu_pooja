@@ -5562,9 +5562,9 @@ async function loadGiftData() {
   }
 }
 
-function renderGiftGallery() {
+async function renderGiftGallery() {
   // Load stock entries if not yet loaded (needed for last-given dates)
-  //if (!stockEntries.length && sb && myLocation) await loadStockData();
+  if (!stockEntries.length && sb && myLocation) await loadStockData();
   const canManageGifts = role === 'admin' || role === 'superadmin';
   if ($('addGiftBtn')) $('addGiftBtn').style.display = canManageGifts ? '' : 'none';
   // Category filter dropdown
