@@ -5099,6 +5099,10 @@ function populateSundayPicker(fy) {
 function addSundayChip() {
   const val = $('dSundayPicker').value;
   if (!val) { toast('Select a Sunday first'); return; }
+  const maxSuns = parseInt($('dSundays')?.value || 0);
+  if (maxSuns && selectedSundays.length >= maxSuns) {
+    toast('Maximum ' + maxSuns + ' Sunday(s) allowed for this donor'); return;
+  }
   if (disabledEventDays.has(val)) { toast('This event day is disabled'); return; }
   if (selectedSundays.includes(val)) { toast('Date already added'); return; }
   selectedSundays.push(val);
@@ -5134,10 +5138,9 @@ async function saveDonor() {
   if (!name)   { showErr('donorModalErr','Full name required'); return; }
   if (!mobile || mobile.length !== 10) { showErr('donorModalErr','Valid 10-digit mobile required'); return; }
   if (!amount) { showErr('donorModalErr','Amount required'); return; }
-  if (selectedSundays.length > 0 && selectedSundays.length !== numSuns) {
+  if (selectedSundays.length > numSuns) {
     showErr('donorModalErr',
-      'You selected ' + numSuns + ' Sunday(s) but picked ' + selectedSundays.length + ' date(s). ' +
-      'Either match the count or leave dates empty to add later.'
+      'You picked ' + selectedSundays.length + ' date(s) but donor is for only ' + numSuns + ' Sunday(s). Remove ' + (selectedSundays.length - numSuns) + ' date(s).'
     ); return;
   }
 
