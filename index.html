@@ -591,6 +591,10 @@ select.fi{cursor:pointer;}
           <di  qv style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:14px 16px 10px;">
             <div class="card-title" style="margin:0;">Gift stock purchases</div>
             <button class="btn btn-green" id="addStockBtn" style="padding:6px 14px;font-size:12px;flex-shrink:0;" onclick="openStockEntryModal()">+ Add purchase</button>
+            <button class="btn btn-gray" onclick="exportStockEntries()">⬇ Download stock Excel</button>
+            <label class="btn btn-gray" style="cursor:pointer;">⬆ Upload stock Excel
+              <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="importStockEntries(this)"/>
+            </label>
           </div>
           <div class="scroll-hint">⟷ Swipe table left/right to see all columns</div>
           <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;">
@@ -6169,6 +6173,7 @@ function selectSeGift(id, label) {
   if ($('seGiftSearch')) $('seGiftSearch').value = label.split(' — ')[0];
   calcStockCost();
 }
+
 // ── Stock entry modal
 function openStockEntryModal(id) {
   $('stockEntryId').value = id||'';
@@ -6206,6 +6211,7 @@ function openStockEntryModal(id) {
   }
   openModal('stockEntryModal');
 }
+  
 function onQtyBoughtChange() {
   // Auto-fill qty left only when adding new stock (not editing)
   if (!$('stockEntryId').value) {
@@ -6256,7 +6262,103 @@ async function deleteStockEntry(id) {
     stockEntries=stockEntries.filter(e=>e.id!==id); _renderStockFinance(); toast('Entry deleted');
   });
 }
+async function exportStockEntries() {
+  if (!sb || !myLocation) return;
+  // Fetch ALL entries including zero-qty ones (hidden in UI but exist in DB)
+  const { data, error } = await sb.from('gift_stock_entries')
+    .select('*, gifts(name, gift_categories(name))')
+    .eq('location_id', myLocation.id)
+    .order('purchase_date', { ascending: false });
+  if (error) { toast('Error: ' + error.message); return; }
+  if (!data?.length) { toast('No stock entries found'); return; }
 
+  const rows = data.map(e => ({
+    'Entry ID'          : e.id,   // DO NOT EDIT — used for update matching
+    'Gift Name'         : e.gifts?.name || '',
+    'Category'          : e.gifts?.gift_categories?.name || '',
+    'Fiscal Year'       : e.fiscal_year,
+    'Purchase Date'     : e.purchase_date || '',
+    'Qty Bought'        : e.qty_bought,
+    'Qty Left'          : e.qty_left,
+    'Buy Price/Unit'    : e.buy_price_per_unit,
+    'Transport Cost'    : e.transport_cost || 0,
+    'Total Cost'        : (e.qty_bought*(e.buy_price_per_unit||0))+(e.transport_cost||0),
+    'Given Date'        : e.given_date || '',   // EDIT THIS COLUMN
+    'Notes'             : e.notes || '',
+  }));
+
+  xlDown(rows, `Stock_Entries_${myLocation.name}_${TODAY}`);
+  toast(`Exported ${rows.length} entries (including zero-stock)`);
+}
+async function importStockEntries(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    const wb   = XLSX.read(e.target.result, { type:'binary' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw:false });
+    if (!rows.length) { toast('No rows found'); input.value=''; return; }
+
+    const loadBar = document.createElement('div');
+    loadBar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1a1a1a;color:#fff;z-index:99999;padding:12px 16px;font-size:13px;';
+    loadBar.innerHTML = `<div id="sImportMsg">Processing…</div>
+      <div style="height:4px;background:#444;border-radius:2px;margin-top:6px;">
+        <div id="sImportFill" style="height:100%;width:0%;background:#1baf7a;border-radius:2px;transition:width .2s;"></div>
+      </div>`;
+    document.body.appendChild(loadBar);
+
+    let updated = 0, skipped = 0, errors = [];
+    const total = rows.length;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const id  = (row['Entry ID'] || '').trim();
+      if (!id) { skipped++; continue; }
+
+      // Only update editable fields — given_date, qty_left, notes
+      const givenDate = (row['Given Date'] || '').trim() || null;
+      const qtyLeft   = row['Qty Left'] !== undefined ? parseInt(row['Qty Left']) : undefined;
+      const notes     = row['Notes'] !== undefined ? (row['Notes']||'').trim()||null : undefined;
+
+      const updateObj = {};
+      if (givenDate !== null || row.hasOwnProperty('Given Date')) updateObj.given_date = givenDate;
+      if (qtyLeft   !== undefined) updateObj.qty_left = qtyLeft;
+      if (notes     !== undefined) updateObj.notes    = notes;
+
+      if (!Object.keys(updateObj).length) { skipped++; continue; }
+
+      const { error } = await sb.from('gift_stock_entries').update(updateObj).eq('id', id);
+      if (error) {
+        errors.push(`Row ${i+2}: ${error.message}`);
+      } else {
+        updated++;
+        // Update local array
+        const idx = stockEntries.findIndex(x => x.id === id);
+        if (idx >= 0) Object.assign(stockEntries[idx], updateObj);
+      }
+
+      // Progress
+      const pct = Math.round((i+1)/total*100);
+      if ($('sImportMsg'))  $('sImportMsg').textContent  = `Updated ${updated} of ${total}…`;
+      if ($('sImportFill')) $('sImportFill').style.width = pct + '%';
+    }
+
+        setTimeout(() => {
+      if (document.body.contains(loadBar)) document.body.removeChild(loadBar);
+    }, 2000);
+
+    _renderStockFinance();
+    input.value = '';
+
+    let summary = `✓ ${updated} entries updated`;
+    if (skipped) summary += `, ${skipped} skipped`;
+    toast(summary);
+    if (errors.length) {
+      console.warn('Stock import errors:', errors);
+      setTimeout(() => toast(`⚠️ ${errors.length} errors — check console`), 3000);
+    }
+  };
+  reader.readAsBinaryString(file);
+} 
 // ── Misc expense modal
 function openMiscExpModal(id) {
   $('miscExpId').value=id||'';
