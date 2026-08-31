@@ -1094,10 +1094,11 @@ function initSB() {
   return true;
 }
 initSB();
-// Check public gallery link before anything else
 (async () => {
   const isPublic = await checkPublicGallery();
   if (isPublic) return;
+  // Only run normal app init if not a public gallery page
+  if (typeof init === 'function') init();
 })();
 // ═══════════════════════════════════════════════════
 // CLOUDINARY — media storage (kids & gift photos)
@@ -6865,6 +6866,10 @@ function openGalleryEntryModal() {
   $('gMedia').value   = '';
   $('gMediaPreview').innerHTML = '';
   $('gUploadProgress').style.display = 'none';
+  if ($('gEntryId'))          $('gEntryId').value = '';
+  if ($('gExistingMediaWrap')) $('gExistingMediaWrap').style.display = 'none';
+  if ($('gExistingMedia'))     $('gExistingMedia').innerHTML = '';
+  $('galleryEntryTitle').textContent = 'Add event photos/videos';
   hideErr('galleryEntryErr');
   openModal('galleryEntryModal');
 }
@@ -6890,7 +6895,50 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+async function editGalleryEntry(id) {
+  const { data: entry } = await sb.from('gallery')
+    .select('*, gallery_media(*)')
+    .eq('id', id).single();
+  if (!entry) return;
 
+  $('gEntryId').value  = id;
+  $('gDate').value     = entry.event_date || '';
+  $('gDonors').value   = entry.donor_names || '';
+  $('gDesc').value     = entry.description || '';
+  $('gMedia').value    = '';
+  $('gMediaPreview').innerHTML = '';
+  $('galleryEntryTitle').textContent = 'Edit event photos';
+  hideErr('galleryEntryErr');
+
+  // Show existing media with delete option
+  const existingWrap = $('gExistingMediaWrap');
+  const existingEl   = $('gExistingMedia');
+  const media = entry.gallery_media || [];
+
+  if (media.length) {
+    existingWrap.style.display = 'block';
+    existingEl.innerHTML = media.map(m => `
+      <div id="gmedia_${m.id}" style="position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;background:#f0f0f0;flex-shrink:0;">
+        ${m.media_type==='video'
+          ? `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:24px;">🎬</div>`
+          : `<img src="${m.media_url}" style="width:100%;height:100%;object-fit:cover;"/>`}
+        <button onclick="deleteGalleryMedia('${m.id}')"
+          style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;line-height:1;">✕</button>
+      </div>`).join('');
+  } else {
+    existingWrap.style.display = 'none';
+  }
+
+  openModal('galleryEntryModal');
+}
+
+async function deleteGalleryMedia(mediaId) {
+  const { error } = await sb.from('gallery_media').delete().eq('id', mediaId);
+  if (error) { toast('Error: ' + error.message); return; }
+  const el = $(`gmedia_${mediaId}`);
+  if (el) el.remove();
+  toast('Media removed');
+}
 async function saveGalleryEntry() {
   const date   = $('gDate').value;
   const donors = $('gDonors').value.trim();
@@ -6903,14 +6951,27 @@ async function saveGalleryEntry() {
   btn.innerHTML = '<span class="spin"></span> Uploading…'; btn.disabled = true;
   hideErr('galleryEntryErr');
 
-  // Create gallery entry row
-  const { data: entry, error: entryErr } = await sb.from('gallery').insert({
-    location_id : myLocation.id,
-    event_date  : date,
-    donor_names : donors || null,
-    description : desc || null,
-    created_by  : me.id,
-  }).select().single();
+  const editId = $('gEntryId')?.value || '';
+  let entry, entryErr;
+
+  if (editId) {
+    // Update existing entry
+    ({ error: entryErr } = await sb.from('gallery').update({
+      event_date  : date,
+      donor_names : donors || null,
+      description : desc || null,
+    }).eq('id', editId));
+    entry = { id: editId };
+  } else {
+    // Create new entry
+    ({ data: entry, error: entryErr } = await sb.from('gallery').insert({
+      location_id : myLocation.id,
+      event_date  : date,
+      donor_names : donors || null,
+      description : desc || null,
+      created_by  : me.id,
+    }).select().single());
+  }
 
   if (entryErr) {
     showErr('galleryEntryErr', entryErr.message);
@@ -6970,7 +7031,7 @@ async function renderGallery() {
     // Public share link
     const shareUrl = `https://vsddombivli.github.io/prabhu_pooja/?gallery=${e.id}`;
     const deleteBtn = (role==='admin'||role==='superadmin')
-      ? `<button onclick="deleteGalleryEntry('${e.id}')" style="background:none;border:none;color:var(--red);font-size:11px;cursor:pointer;padding:0;">🗑 Delete</button>`
+      ? `<button onclick="event.stopPropagation();deleteGalleryEntry('${e.id}')" style="background:none;border:none;color:var(--red);font-size:11px;cursor:pointer;padding:0;">🗑 Delete</button>`
       : '';
 
     return `<div class="card" style="padding:0;overflow:hidden;cursor:pointer;" onclick="openGalleryView('${e.id}')">
@@ -6983,6 +7044,7 @@ async function renderGallery() {
           <span style="font-size:11px;color:var(--gray);">📷 ${images.length} &nbsp; 🎬 ${videos.length}</span>
           <div style="display:flex;gap:10px;align-items:center;">
             ${deleteBtn}
+            ${(role==='admin'||role==='superadmin') ? `<button onclick="event.stopPropagation();editGalleryEntry('${e.id}')" style="background:none;border:none;color:var(--blue);font-size:11px;cursor:pointer;padding:0;">✏️ Edit</button>` : ''}
             <button onclick="event.stopPropagation();shareGallery('${e.id}','${fmtDate(e.event_date)}')"
               style="background:none;border:none;color:var(--blue);font-size:11px;cursor:pointer;padding:0;">🔗 Share</button>
           </div>
@@ -7046,9 +7108,15 @@ async function deleteGalleryEntry(id) {
 async function checkPublicGallery() {
   const params  = new URLSearchParams(window.location.search);
   const entryId = params.get('gallery');
-  if (!entryId) return false;
+  if (!entryId || entryId === 'ID') return false;  // guard against literal 'ID'
 
-  // Show gallery without login
+  // Ensure sb is initialized
+  if (!sb) { initSB(); }
+  if (!sb) {
+    document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:system-ui;">Unable to connect. Please check your connection.</div>';
+    return true;
+  }
+
   const { data: entry } = await sb.from('gallery')
     .select('*, gallery_media(*)')
     .eq('id', entryId)
@@ -7393,10 +7461,15 @@ async function checkPublicGallery() {
     <div class="fg"><label class="fl">Description</label>
       <input class="fi" id="gDesc" placeholder="e.g. Bal Sanskar event, gift distribution…"/>
     </div>
-    <div class="fg"><label class="fl">Photos / Videos (multiple allowed)</label>
+    <div class="fg" id="gExistingMediaWrap" style="display:none;">
+      <label class="fl">Existing media</label>
+      <div id="gExistingMedia" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;"></div>
+    </div>
+    <div class="fg"><label class="fl">Add more photos / videos</label>
       <input type="file" id="gMedia" multiple accept="image/*,video/*" class="fi" style="padding:6px;"/>
       <div id="gMediaPreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"></div>
     </div>
+    <input type="hidden" id="gEntryId"/>
     <div id="gUploadProgress" style="display:none;font-size:13px;color:var(--gray);margin-top:6px;"></div>
     <div id="galleryEntryErr" class="alert alert-red"></div>
   </div>
