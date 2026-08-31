@@ -1094,7 +1094,11 @@ function initSB() {
   return true;
 }
 initSB();
-
+// Check public gallery link before anything else
+(async () => {
+  const isPublic = await checkPublicGallery();
+  if (isPublic) return;
+})();
 // ═══════════════════════════════════════════════════
 // CLOUDINARY — media storage (kids & gift photos)
 // ═══════════════════════════════════════════════════
@@ -1512,9 +1516,6 @@ function enterApp() {
     loadParentKids();
     goTo('mykids');
   } else {
-    // Check if this is a public gallery share link — show without login
-    const isPublicGallery = checkPublicGallery();
-    if (isPublicGallery) return; // stop here, no login needed
     loadAll().then(async () => { await loadPhase2(); goTo('dashboard'); });
   }
 
@@ -1558,18 +1559,18 @@ function buildNav() {
   const tabs = role === 'parent'
     ? [['mykids','My Children']]
     : [
-        ['dashboard','Dashboard'],
-        ['attendance','Attendance'],
-        ['kids','Kids'],
-        ['gifts','Gifts'],
-        ['gallery','🖼 Gallery'],
-        ...(isAdmin ? [['users','Users']] : []),
-        ...(isAdmin ? [['vendors','Vendors']] : []),
-        ...(isAdmin ? [['donors','Donors']] : []),
-        ['stock', role === 'volunteer' ? '📦 Stock' : '📦 Stock & Finance'],
-        ...(isAdmin ? [['reports','📊 Reports']] : []),
-        ...(isSuperAdmin ? [['locations','Locations']] : []),
-        ...(isAdmin ? [['settings','Settings']] : []),
+        ['dashboard',  '🏠 Dashboard'],
+        ['attendance', '✅ Attendance'],
+        ['kids',       '👦 Kids'],
+        ['gifts',      '🎁 Gifts'],
+        ['gallery',    '🖼 Gallery'],
+        ...(isAdmin ? [['users',    '👥 Users']]    : []),
+        ...(isAdmin ? [['vendors',  '🏪 Vendors']]  : []),
+        ...(isAdmin ? [['donors',   '💰 Donors']]   : []),
+        ...(isAdmin ? [['stock',    '📦 Stock & Finance']] : [['stock','📦 Stock']] ),
+        ...(isAdmin ? [['reports',  '📊 Reports']]  : []),
+        ...(isSuperAdmin ? [['locations','📍 Locations']] : []),
+        ...(isAdmin ? [['settings', '⚙️ Settings']] : []),
       ];
 
   // Superadmin: add location switcher dropdown in nav
