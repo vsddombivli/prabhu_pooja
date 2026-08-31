@@ -1513,7 +1513,7 @@ function enterApp() {
     goTo('mykids');
   } else {
     // Check if this is a public gallery share link — show without login
-    const isPublicGallery = await checkPublicGallery();
+    const isPublicGallery = checkPublicGallery();
     if (isPublicGallery) return; // stop here, no login needed
     loadAll().then(async () => { await loadPhase2(); goTo('dashboard'); });
   }
