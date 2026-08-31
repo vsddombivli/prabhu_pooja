@@ -530,7 +530,17 @@ select.fi{cursor:pointer;}
       </div>
       <div id="donorListContainer"></div>
     </div>
-
+    
+    <!-- ── EVENT GALLERY ── -->
+    <div id="screen-gallery" class="screen">
+      <div id="galleryAdminBar" style="display:none;margin-bottom:12px;">
+        <button class="btn btn-green" onclick="openGalleryEntryModal()">+ Add event photos</button>
+      </div>
+      <div id="galleryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;">
+        <div style="color:var(--gray);font-size:13px;padding:20px;">Loading…</div>
+      </div>
+    </div>
+    
     <!-- ── GIFT GALLERY (all roles except parent) ── -->
     <div id="screen-gifts" class="screen">
       <div class="toolbar" id="giftToolbar" style="flex-wrap:wrap;gap:8px;">
@@ -1502,6 +1512,9 @@ function enterApp() {
     loadParentKids();
     goTo('mykids');
   } else {
+    // Check if this is a public gallery share link — show without login
+    const isPublicGallery = await checkPublicGallery();
+    if (isPublicGallery) return; // stop here, no login needed
     loadAll().then(async () => { await loadPhase2(); goTo('dashboard'); });
   }
 
@@ -1549,6 +1562,7 @@ function buildNav() {
         ['attendance','Attendance'],
         ['kids','Kids'],
         ['gifts','Gifts'],
+        ['gallery','🖼 Gallery'],
         ...(isAdmin ? [['users','Users']] : []),
         ...(isAdmin ? [['vendors','Vendors']] : []),
         ...(isAdmin ? [['donors','Donors']] : []),
@@ -1600,6 +1614,7 @@ function goTo(id) {
   if (id === 'donors')     renderDonorList();
   if (id === 'locations')  renderLocationList();
   if (id === 'gifts')      renderGiftGallery();
+  if (id === 'gallery')    renderGallery();
   if (id === 'vendors')    renderVendorList();
   if (id === 'stock')      renderStockFinance();
   if (id === 'reports')    renderReports();
@@ -6821,6 +6836,245 @@ async function fetchImageAsDataURL(url) {
     reader.readAsDataURL(blob);
   });
 }
+
+// ═══════════════════════════════════════════════════
+// EVENT GALLERY
+// ═══════════════════════════════════════════════════
+const CLOUDINARY_CLOUD = 'wbfgrtqn';       // ← replace with your cloud name
+const CLOUDINARY_PRESET = 'prabhu_pooja_gallery'; // ← create unsigned upload preset in Cloudinary
+
+async function uploadToCloudinary(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY_PRESET);
+  fd.append('folder', 'prabhu_pooja/gallery');
+  const resourceType = file.type.startsWith('video') ? 'video' : 'image';
+  const res  = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/${resourceType}/upload`, {
+    method: 'POST', body: fd
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return { url: data.secure_url, public_id: data.public_id, type: resourceType };
+}
+
+function openGalleryEntryModal() {
+  $('gDate').value    = TODAY;
+  $('gDonors').value  = '';
+  $('gDesc').value    = '';
+  $('gMedia').value   = '';
+  $('gMediaPreview').innerHTML = '';
+  $('gUploadProgress').style.display = 'none';
+  hideErr('galleryEntryErr');
+  openModal('galleryEntryModal');
+}
+
+// Preview selected files
+document.addEventListener('DOMContentLoaded', () => {
+  const gMedia = $('gMedia');
+  if (gMedia) gMedia.addEventListener('change', () => {
+    const preview = $('gMediaPreview');
+    preview.innerHTML = '';
+    [...gMedia.files].forEach(f => {
+      const box = document.createElement('div');
+      box.style.cssText = 'width:80px;height:80px;border-radius:8px;overflow:hidden;background:#f0f0f0;flex-shrink:0;';
+      if (f.type.startsWith('image')) {
+        const img = document.createElement('img');
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+        img.src = URL.createObjectURL(f);
+        box.appendChild(img);
+      } else {
+        box.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:11px;color:#666;text-align:center;padding:4px;">🎬 ${f.name.slice(0,15)}</div>`;
+      }
+      preview.appendChild(box);
+    });
+  });
+});
+
+async function saveGalleryEntry() {
+  const date   = $('gDate').value;
+  const donors = $('gDonors').value.trim();
+  const desc   = $('gDesc').value.trim();
+  const files  = [...($('gMedia').files || [])];
+  if (!date)          { showErr('galleryEntryErr','Select event date'); return; }
+  if (!files.length)  { showErr('galleryEntryErr','Select at least one photo or video'); return; }
+
+  const btn = $('gSaveBtn');
+  btn.innerHTML = '<span class="spin"></span> Uploading…'; btn.disabled = true;
+  hideErr('galleryEntryErr');
+
+  // Create gallery entry row
+  const { data: entry, error: entryErr } = await sb.from('gallery').insert({
+    location_id : myLocation.id,
+    event_date  : date,
+    donor_names : donors || null,
+    description : desc || null,
+    created_by  : me.id,
+  }).select().single();
+
+  if (entryErr) {
+    showErr('galleryEntryErr', entryErr.message);
+    btn.innerHTML = 'Upload & Save'; btn.disabled = false;
+    return;
+  }
+
+  // Upload each file to Cloudinary
+  const prog = $('gUploadProgress');
+  prog.style.display = 'block';
+  const mediaRows = [];
+  for (let i = 0; i < files.length; i++) {
+    prog.textContent = `Uploading ${i+1} of ${files.length}…`;
+    try {
+      const res = await uploadToCloudinary(files[i]);
+      mediaRows.push({ gallery_id: entry.id, media_url: res.url, media_type: res.type, public_id: res.public_id });
+    } catch(e) {
+      showErr('galleryEntryErr', `File ${files[i].name}: ${e.message}`);
+    }
+  }
+
+  if (mediaRows.length) {
+    await sb.from('gallery_media').insert(mediaRows);
+  }
+
+  btn.innerHTML = 'Upload & Save'; btn.disabled = false;
+  closeModal('galleryEntryModal');
+  renderGallery();
+  toast(`${mediaRows.length} files uploaded successfully`);
+}
+
+async function renderGallery() {
+  const el = $('galleryGrid'); if (!el) return;
+  const adminBar = $('galleryAdminBar');
+  if (adminBar) adminBar.style.display = (role==='admin'||role==='superadmin') ? 'block' : 'none';
+
+  el.innerHTML = '<div style="color:var(--gray);font-size:13px;padding:20px;">Loading…</div>';
+
+  const { data: entries } = await sb.from('gallery')
+    .select('*, gallery_media(*)')
+    .eq('location_id', myLocation.id)
+    .order('event_date', { ascending: false });
+
+  if (!entries?.length) {
+    el.innerHTML = '<div style="color:var(--gray);font-size:13px;padding:20px;">No gallery entries yet.</div>';
+    return;
+  }
+
+  el.innerHTML = entries.map(e => {
+    const media   = e.gallery_media || [];
+    const images  = media.filter(m => m.media_type === 'image');
+    const videos  = media.filter(m => m.media_type === 'video');
+    const thumb   = images[0]?.media_url
+      ? `<img src="${images[0].media_url}" style="width:100%;height:180px;object-fit:cover;border-radius:8px 8px 0 0;display:block;"/>`
+      : `<div style="width:100%;height:180px;background:#e8eaf0;border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;font-size:36px;">🖼</div>`;
+
+    // Public share link
+    const shareUrl = `https://vsddombivli.github.io/prabhu_pooja/?gallery=${e.id}`;
+    const deleteBtn = (role==='admin'||role==='superadmin')
+      ? `<button onclick="deleteGalleryEntry('${e.id}')" style="background:none;border:none;color:var(--red);font-size:11px;cursor:pointer;padding:0;">🗑 Delete</button>`
+      : '';
+
+    return `<div class="card" style="padding:0;overflow:hidden;cursor:pointer;" onclick="openGalleryView('${e.id}')">
+      ${thumb}
+      <div style="padding:12px;">
+        <div style="font-weight:700;font-size:14px;">${fmtDate(e.event_date)}</div>
+        ${e.donor_names ? `<div style="font-size:12px;color:var(--blue);margin-top:2px;">👤 ${e.donor_names}</div>` : ''}
+        ${e.description ? `<div style="font-size:12px;color:var(--gray);margin-top:2px;">${e.description}</div>` : ''}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+          <span style="font-size:11px;color:var(--gray);">📷 ${images.length} &nbsp; 🎬 ${videos.length}</span>
+          <div style="display:flex;gap:10px;align-items:center;">
+            ${deleteBtn}
+            <button onclick="event.stopPropagation();shareGallery('${e.id}','${fmtDate(e.event_date)}')"
+              style="background:none;border:none;color:var(--blue);font-size:11px;cursor:pointer;padding:0;">🔗 Share</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function shareGallery(entryId, dateLabel) {
+  const url = `https://vsddombivli.github.io/prabhu_pooja/?gallery=${entryId}`;
+  if (navigator.share) {
+    navigator.share({ title: `Prabhu Pooja Gallery — ${dateLabel}`, url });
+  } else {
+    navigator.clipboard.writeText(url).then(() => toast('Link copied!'));
+  }
+}
+
+async function openGalleryView(entryId) {
+  const { data: entry } = await sb.from('gallery')
+    .select('*, gallery_media(*)')
+    .eq('id', entryId)
+    .single();
+  if (!entry) return;
+
+  const media = entry.gallery_media || [];
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;overflow-y:auto;padding:16px;';
+  overlay.innerHTML = `
+    <div style="max-width:700px;margin:0 auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div>
+          <div style="color:#fff;font-size:18px;font-weight:700;">${fmtDate(entry.event_date)}</div>
+          ${entry.donor_names ? `<div style="color:#aaa;font-size:13px;">👤 ${entry.donor_names}</div>` : ''}
+          ${entry.description ? `<div style="color:#aaa;font-size:13px;">${entry.description}</div>` : ''}
+        </div>
+        <button onclick="this.closest('div').parentElement.parentElement.remove()"
+          style="background:none;border:none;color:#fff;font-size:28px;cursor:pointer;line-height:1;">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+        ${media.map(m => m.media_type==='video'
+          ? `<video src="${m.media_url}" controls style="width:100%;border-radius:8px;max-height:300px;"></video>`
+          : `<img src="${m.media_url}" onclick="viewKidPhoto('${m.media_url}','')" style="width:100%;border-radius:8px;cursor:pointer;object-fit:cover;height:200px;"/>`
+        ).join('')}
+      </div>
+    </div>`;
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+async function deleteGalleryEntry(id) {
+  confirm2('Delete this gallery entry and all its photos/videos?', async () => {
+    await sb.from('gallery').delete().eq('id', id);
+    renderGallery();
+    toast('Entry deleted');
+  });
+}
+
+// ── Public gallery view (no login) ────────────────
+// Called on page load if ?gallery=ID in URL
+async function checkPublicGallery() {
+  const params  = new URLSearchParams(window.location.search);
+  const entryId = params.get('gallery');
+  if (!entryId) return false;
+
+  // Show gallery without login
+  const { data: entry } = await sb.from('gallery')
+    .select('*, gallery_media(*)')
+    .eq('id', entryId)
+    .single();
+
+  if (!entry) { document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:system-ui;">Gallery entry not found.</div>'; return true; }
+
+  document.body.innerHTML = `
+    <div style="font-family:system-ui;max-width:700px;margin:0 auto;padding:16px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+        <div style="font-size:22px;font-weight:700;">Prabhu Pooja — Gallery</div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:18px;font-weight:700;">${fmtDate(entry.event_date)}</div>
+        ${entry.donor_names ? `<div style="font-size:14px;color:#2a78d6;margin-top:4px;">👤 ${entry.donor_names}</div>` : ''}
+        ${entry.description ? `<div style="font-size:13px;color:#666;margin-top:4px;">${entry.description}</div>` : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+        ${(entry.gallery_media||[]).map(m => m.media_type==='video'
+          ? `<video src="${m.media_url}" controls style="width:100%;border-radius:8px;max-height:300px;"></video>`
+          : `<img src="${m.media_url}" style="width:100%;border-radius:8px;object-fit:cover;height:200px;cursor:pointer;" onclick="this.requestFullscreen&&this.requestFullscreen()"/>`
+        ).join('')}
+      </div>
+      <div style="margin-top:24px;font-size:12px;color:#999;text-align:center;">Vardhman Sanskar Dham, Dombivli</div>
+    </div>`;
+  return true;
+}
 </script>
 
 <!-- MODAL: Add/Edit Gift -->
@@ -7117,6 +7371,37 @@ async function fetchImageAsDataURL(url) {
   <div class="modal-body" id="kidDetailBody"></div>
   <div class="modal-foot">
     <button class="btn btn-gray" onclick="closeModal('kidDetailModal')">Close</button>
+  </div>
+</div>
+</div>
+
+<!-- MODAL: Add Gallery Entry -->
+<div class="modal-overlay" id="galleryEntryModal">
+<div class="modal" style="max-width:500px;">
+  <div class="modal-head">
+    <div class="modal-title" id="galleryEntryTitle">Add event photos/videos</div>
+    <button style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--gray);" onclick="closeModal('galleryEntryModal')">&#x2715;</button>
+  </div>
+  <div class="modal-body">
+    <div class="fg"><label class="fl">Event date *</label>
+      <input class="fi" type="date" id="gDate"/>
+    </div>
+    <div class="fg"><label class="fl">Donor name(s) (optional)</label>
+      <input class="fi" id="gDonors" placeholder="e.g. Tejas bhai, Mohini Fofalia"/>
+    </div>
+    <div class="fg"><label class="fl">Description</label>
+      <input class="fi" id="gDesc" placeholder="e.g. Bal Sanskar event, gift distribution…"/>
+    </div>
+    <div class="fg"><label class="fl">Photos / Videos (multiple allowed)</label>
+      <input type="file" id="gMedia" multiple accept="image/*,video/*" class="fi" style="padding:6px;"/>
+      <div id="gMediaPreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"></div>
+    </div>
+    <div id="gUploadProgress" style="display:none;font-size:13px;color:var(--gray);margin-top:6px;"></div>
+    <div id="galleryEntryErr" class="alert alert-red"></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-gray" onclick="closeModal('galleryEntryModal')">Cancel</button>
+    <button class="btn btn-green" id="gSaveBtn" onclick="saveGalleryEntry()">Upload & Save</button>
   </div>
 </div>
 </div>
