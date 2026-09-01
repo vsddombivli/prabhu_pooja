@@ -6845,7 +6845,7 @@ async function fetchImageAsDataURL(url) {
 const CLOUDINARY_CLOUD = 'ixycuksb';       // ← replace with your cloud name
 const CLOUDINARY_PRESET = 'wbfgrtqn'; // ← create unsigned upload preset in Cloudinary
 
-async function uploadToCloudinary(file) {
+async function uploadToCloudinaryGallery(file) {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('upload_preset', CLOUDINARY_PRESET);
@@ -6986,7 +6986,7 @@ async function saveGalleryEntry() {
   for (let i = 0; i < files.length; i++) {
     prog.textContent = `Uploading ${i+1} of ${files.length}…`;
     try {
-      const res = await uploadToCloudinary(files[i]);
+      const res = await uploadToCloudinaryGallery(files[i]);
       mediaRows.push({ gallery_id: entry.id, media_url: res.url, media_type: res.type, public_id: res.public_id });
     } catch(e) {
       showErr('galleryEntryErr', `File ${files[i].name}: ${e.message}`);
